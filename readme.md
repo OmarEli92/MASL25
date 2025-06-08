@@ -1,2 +1,3 @@
-il progetto gira su ambiente virtuale
-nel file requireme
+-il progetto gira su ambiente virtuale
+- Nel file requirements.txt ci stanno le dipendenze per eseguire basta fare pip install -r requirements.txt
+- Per avviare la simulazione avviare Main.py
