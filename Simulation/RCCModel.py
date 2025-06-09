@@ -16,6 +16,7 @@ from Model.TumorMicroEnvironment import TumorMicroenvironment
 import random
 import os
 import datetime
+
 class RCCModel(Model):
     """
     Il modello che rappresenta il contesto del RCC si occupa di inizializzare le cellule,
@@ -60,11 +61,11 @@ class RCCModel(Model):
                 "Immune Cells (total)": lambda m: m.get_total_immune_cells(),
                 "Active Immune Cells": lambda m: m.get_active_immune_cells(),
                 "Destroyed Tumor Cells": lambda m: m.get_destroyed_tumor_cells(),
-                "Overall Survival": lambda m: m.get_overall_survival(),
-                "Progression-Free Survival": lambda m: m.get_progression_free_survival(),
                 "Average Cancer Cell PD-L1": lambda m: m.compute_avg_pdl1(),
                 "Average TCell Activation": lambda m: m.compute_avg_tcell_activation(),
                 "Average TCell Exhaustion": lambda m: m.compute_avg_tcell_exhaustion(),
+                "Overall Survival": lambda m: m.get_overall_survival(),
+                "Progression-Free Survival": lambda m: m.get_progression_free_survival(),
                 "Time Step": lambda m: m.time_steps
             },
             agent_reporters={
@@ -74,6 +75,8 @@ class RCCModel(Model):
             }
         )
         self.datacollector.collect(self)
+        # Duplichiamo l'istanza per Mesa ChartModule legacy
+        self.DataCollector = self.datacollector
 
     def get_next_id(self):
         current_id = self.next_id
@@ -106,8 +109,6 @@ class RCCModel(Model):
                 subtype = random.choice(list(THelperSubtype))
                 cell = THelper(self.get_next_id(), self, self.patient, subtype)
             self.add_agent_to_grid(cell)
-
-
 
     def _compute_os(self) -> float:
         """Il metodo restituisce l'Overall survival basandosi sulle cellule tumorali rimaste"""
@@ -202,24 +203,50 @@ class RCCModel(Model):
         model_df.to_csv(os.path.join(output_dir, f"{filename}_model.csv"), index=False)
         agent_df.to_csv(os.path.join(output_dir, f"{filename}_agents.csv"), index=False)
 
-
-
     def get_total_tumor_cells(self):
-        return sum(1 for agent in self.schedule.agents if isinstance(agent, TumorCell) and not agent.isDead)
+        """Conta le cellule tumorali vive"""
+        return sum(1 for agent in self.schedule.agents 
+                  if isinstance(agent, TumorCell) and not getattr(agent, 'isDead', False))
 
     def get_total_immune_cells(self):
-        return sum(1 for agent in self.schedule.agents if 'ImmuneCell' in type(agent).__name__)
+        """Conta tutte le cellule immunitarie vive"""
+        return sum(1 for agent in self.schedule.agents 
+                  if isinstance(agent, ImmuneCell) and not getattr(agent, 'isDead', False))
 
     def get_active_immune_cells(self):
-        return sum(1 for agent in self.schedule.agents if hasattr(agent, "is_active") and agent.is_active)
+        """Conta le cellule immunitarie attive"""
+        count = 0
+        for agent in self.schedule.agents:
+            if isinstance(agent, ImmuneCell) and not getattr(agent, 'isDead', False):
+                # Controlla diversi possibili attributi per l'attivazione
+                if (hasattr(agent, "is_active") and getattr(agent, "is_active", False)) or \
+                   (hasattr(agent, "activation_level") and getattr(agent, "activation_level", 0) > 0.5):
+                    count += 1
+        return count
 
     def get_destroyed_tumor_cells(self):
-        return self.initial_tumor_cells_at_start - self.get_total_tumor_cells()
+        """Calcola le cellule tumorali distrutte"""
+        return max(0, self.initial_tumor_cells_at_start - self.get_total_tumor_cells())
 
     def get_overall_survival(self):
-        return 1 if self.get_total_tumor_cells() > 0 else 0
+        """Calcola l'Overall Survival come percentuale"""
+        tumor_cells = self.get_total_tumor_cells()
+        if self.initial_tumor_cells_at_start == 0:
+            return 100.0
+        
+        # OS basato sulla riduzione delle cellule tumorali
+        survival_rate = max(0.0, 100.0 * (1 - (tumor_cells / self.initial_tumor_cells_at_start)))
+        return survival_rate
 
     def get_progression_free_survival(self):
-        return 1 if self.get_total_tumor_cells() <= self.initial_tumor_cells_at_start else 0
-
-
+        """Calcola il Progression-Free Survival come percentuale"""
+        tumor_cells = self.get_total_tumor_cells()
+        
+        # Se non ci sono più cellule tumorali dell'inizio, non c'è progressione
+        if tumor_cells <= self.initial_tumor_cells_at_start:
+            return 100.0
+        else:
+            # Calcola la progressione come percentuale oltre il valore iniziale
+            progression_ratio = (tumor_cells - self.initial_tumor_cells_at_start) / self.initial_tumor_cells_at_start
+            pfs_percentage = max(0.0, 100.0 * (1.0 - progression_ratio))
+            return pfs_percentage

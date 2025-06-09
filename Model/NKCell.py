@@ -8,10 +8,21 @@ if TYPE_CHECKING:
     from Simulation.RCCModel import RCCModel
 
 class NKCell(ImmuneCell):
-    def __init__(self,unique_id: int, model: "RCCModel", patient: Patient):
+    def __init__(self, unique_id: int, model: "RCCModel", patient: Patient):
         super().__init__(unique_id, model, patient)
         self.activation = 0.6
 
     def attack(self, cancer_cell: TumorCell) -> bool:
         success_prob = (self.activation * 1.2) - (cancer_cell.pdl1_expression * 0.5)
         return random.random() < success_prob
+    
+    def step(self):
+        # Aggiungi la chiamata al metodo step della classe genitore
+        super().step()  # <--- QUESTA È LA CHIAVE PER IL MOVIMENTO
+        
+        tumor_cells = [agent for agent in self.model.schedule.agents
+                    if isinstance(agent, TumorCell) and not agent.isDead]
+        if tumor_cells:
+            target = random.choice(tumor_cells)
+            if self.attack(target):
+                target.take_damage(100)  # Infliggi un danno significativo

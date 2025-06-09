@@ -59,9 +59,14 @@ class TumorCell(Agent):
         self.health -= damage
         if self.health <= 0:
             self.isDead = True
+            # Rimuovi immediatamente dalla griglia
+            if hasattr(self, 'pos') and self.pos is not None:
+                self.model.grid.remove_agent(self)
 
     def step(self):
         if self.isDead:
+            # Se è morta, rimuovila dallo scheduler
+            self.model.schedule.remove(self)
             return
         neighbors = self.model.grid.get_neighborhood(self.pos, moore=True, include_center=False)
         free_spaces = [pos for pos in neighbors if self.model.grid.is_cell_empty(pos)]
