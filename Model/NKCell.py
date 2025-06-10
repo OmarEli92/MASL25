@@ -25,4 +25,4 @@ class NKCell(ImmuneCell):
         if tumor_cells:
             target = random.choice(tumor_cells)
             if self.attack(target):
-                target.take_damage(100)  # Infliggi un danno significativo
+                target.take_damage(35)  # Infliggi un danno significativo

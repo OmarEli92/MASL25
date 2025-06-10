@@ -55,6 +55,13 @@ class RCCModel(Model):
         self.initial_tumor_cells_at_start = initial_tumor_cells
         self._initialize_cells(initial_tumor_cells, initial_immune_cells)
 
+        # Variabili per il controllo della terminazione
+        self.simulation_running = True
+        self.termination_reason = None
+        self.tumor_victory_threshold = 3.0  # Rapporto tumore/immune per vittoria tumore
+        self.remission_threshold = 0  # Cellule tumorali esattamente a zero per remissione
+        self.max_steps = 50  # Limite massimo di step per evitare simulazioni infinite
+
         self.datacollector = DataCollector(
             model_reporters={
                 "Tumor Cells (current)": lambda m: m.get_total_tumor_cells(),
@@ -66,7 +73,8 @@ class RCCModel(Model):
                 "Average TCell Exhaustion": lambda m: m.compute_avg_tcell_exhaustion(),
                 "Overall Survival": lambda m: m.get_overall_survival(),
                 "Progression-Free Survival": lambda m: m.get_progression_free_survival(),
-                "Time Step": lambda m: m.time_steps
+                "Time Step": lambda m: m.time_steps,
+                "Simulation Status": lambda m: m.get_simulation_status()
             },
             agent_reporters={
                 "Health": lambda a: getattr(a, 'health', None),
@@ -109,6 +117,58 @@ class RCCModel(Model):
                 subtype = random.choice(list(THelperSubtype))
                 cell = THelper(self.get_next_id(), self, self.patient, subtype)
             self.add_agent_to_grid(cell)
+
+    def check_termination_conditions(self):
+        """Controlla se la simulazione deve terminare e aggiorna lo stato"""
+        if not self.simulation_running:
+            return
+            
+        tumor_cells = self.get_total_tumor_cells()
+        immune_cells = self.get_total_immune_cells()
+        
+        # Condizione 1: Paziente guarito (cellule tumorali esattamente a zero)
+        if tumor_cells == 0:
+            self.simulation_running = False
+            self.termination_reason = "REMISSION"
+            # Ferma la simulazione anche nell'interfaccia Mesa
+            self.running = False
+            print(f"🎉 Simulazione terminata al passo {self.time_steps}: PAZIENTE GUARITO! (cellule tumorali: {tumor_cells})")
+            return
+        
+        # Condizione 2: Tumore ha vinto (troppe cellule tumorali rispetto a quelle immunitarie)
+        if immune_cells > 0:
+            tumor_to_immune_ratio = tumor_cells / immune_cells
+            if tumor_to_immune_ratio >= self.tumor_victory_threshold:
+                self.simulation_running = False
+                self.termination_reason = "TUMOR_VICTORY"
+                # Ferma la simulazione anche nell'interfaccia Mesa
+                self.running = False
+                print(f"💀 Simulazione terminata al passo {self.time_steps}: TUMORE HA VINTO (rapporto {tumor_to_immune_ratio:.2f})")
+                return
+        else:
+            # Se non ci sono più cellule immunitarie, il tumore ha vinto
+            self.simulation_running = False
+            self.termination_reason = "TUMOR_VICTORY"
+            # Ferma la simulazione anche nell'interfaccia Mesa
+            self.running = False
+            print(f"💀 Simulazione terminata al passo {self.time_steps}: TUMORE HA VINTO (nessuna cellula immunitaria rimasta)")
+            return
+        
+        # Condizione 3: Limite massimo di step raggiunto
+        if self.time_steps >= self.max_steps:
+            self.simulation_running = False
+            self.termination_reason = "MAX_STEPS"
+            # Ferma la simulazione anche nell'interfaccia Mesa
+            self.running = False
+            print(f"⏰ Simulazione terminata al passo {self.time_steps}: LIMITE MASSIMO RAGGIUNTO")
+            return
+
+    def get_simulation_status(self):
+        """Restituisce lo stato corrente della simulazione"""
+        if self.simulation_running:
+            return "RUNNING"
+        else:
+            return self.termination_reason or "STOPPED"
 
     def _compute_os(self) -> float:
         """Il metodo restituisce l'Overall survival basandosi sulle cellule tumorali rimaste"""
@@ -178,6 +238,10 @@ class RCCModel(Model):
             self.schedule.remove(agent)
 
     def step(self):
+        # Se la simulazione non è in esecuzione, non fare nulla
+        if not self.simulation_running:
+            return
+            
         self.time_steps += 1
         self.microenvironment.update()
         if self.treatment:
@@ -188,8 +252,14 @@ class RCCModel(Model):
             self.treatment.apply(immune_cells)
         self.schedule.step()
         self.remove_dead_agents()
+        
+        # Controlla le condizioni di terminazione
+        self.check_termination_conditions()
+        
         self.datacollector.collect(self)
-        if self.time_steps == 75:
+        
+        # Salva i dati se la simulazione è terminata o dopo 75 step
+        if not self.simulation_running or self.time_steps == 75:
             self.save_data_to_csv()
 
     def save_data_to_csv(self, filename_prefix="simulation_data"):
@@ -199,9 +269,17 @@ class RCCModel(Model):
         output_dir = "simulation_outputs"
         os.makedirs(output_dir, exist_ok=True)
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{filename_prefix}_{timestamp}.csv"
+        
+        # Aggiungi informazioni sulla terminazione al nome del file
+        status_suffix = ""
+        if self.termination_reason:
+            status_suffix = f"_{self.termination_reason}"
+        
+        filename = f"{filename_prefix}_{timestamp}{status_suffix}.csv"
         model_df.to_csv(os.path.join(output_dir, f"{filename}_model.csv"), index=False)
         agent_df.to_csv(os.path.join(output_dir, f"{filename}_agents.csv"), index=False)
+        
+        print(f"Dati salvati in: {output_dir}/{filename}")
 
     def get_total_tumor_cells(self):
         """Conta le cellule tumorali vive"""
@@ -234,19 +312,39 @@ class RCCModel(Model):
         if self.initial_tumor_cells_at_start == 0:
             return 100.0
         
-        # OS basato sulla riduzione delle cellule tumorali
-        survival_rate = max(0.0, 100.0 * (1 - (tumor_cells / self.initial_tumor_cells_at_start)))
-        return survival_rate
+        # Modifica il calcolo OS in base allo stato della simulazione
+        if self.termination_reason == "REMISSION":
+            return 100.0  # Paziente guarito = 100% OS
+        elif self.termination_reason == "TUMOR_VICTORY":
+            return 0.0    # Tumore ha vinto = 0% OS
+        else:
+            # OS basato sulla riduzione delle cellule tumorali
+            survival_rate = max(0.0, 100.0 * (1 - (tumor_cells / self.initial_tumor_cells_at_start)))
+            return survival_rate
 
     def get_progression_free_survival(self):
         """Calcola il Progression-Free Survival come percentuale"""
         tumor_cells = self.get_total_tumor_cells()
         
-        # Se non ci sono più cellule tumorali dell'inizio, non c'è progressione
-        if tumor_cells <= self.initial_tumor_cells_at_start:
-            return 100.0
+        # Modifica il calcolo PFS in base allo stato della simulazione
+        if self.termination_reason == "REMISSION":
+            return 100.0  # Paziente guarito = 100% PFS
+        elif self.termination_reason == "TUMOR_VICTORY":
+            return 0.0    # Tumore ha vinto = 0% PFS
         else:
-            # Calcola la progressione come percentuale oltre il valore iniziale
-            progression_ratio = (tumor_cells - self.initial_tumor_cells_at_start) / self.initial_tumor_cells_at_start
-            pfs_percentage = max(0.0, 100.0 * (1.0 - progression_ratio))
-            return pfs_percentage
+            # Se non ci sono più cellule tumorali dell'inizio, non c'è progressione
+            if tumor_cells <= self.initial_tumor_cells_at_start:
+                return 100.0
+            else:
+                # Calcola la progressione come percentuale oltre il valore iniziale
+                progression_ratio = (tumor_cells - self.initial_tumor_cells_at_start) / self.initial_tumor_cells_at_start
+                pfs_percentage = max(0.0, 100.0 * (1.0 - progression_ratio))
+                return pfs_percentage
+
+    def is_simulation_finished(self):
+        """Restituisce True se la simulazione è terminata"""
+        return not self.simulation_running
+
+    def get_termination_reason(self):
+        """Restituisce il motivo della terminazione"""
+        return self.termination_reason

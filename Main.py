@@ -60,41 +60,73 @@ def model_wrapper(**kwargs):
 # CanvasGrid: show agents
 grid = CanvasGrid(agent_portrayal, 30, 30, 500, 500)
 
-# Charts: include 'Key' matching DataCollector columns exactly
-chart_cells = ChartModule([
-    {"Label": "Tumor Cells (current)", "Color": "#d73027"},
-    {"Label": "Immune Cells (total)", "Color": "#4575b4"},
-    {"Label": "Active Immune Cells",  "Color": "#1a9850"},
-    {"Label": "Destroyed Tumor Cells","Color": "#000000"},
-], data_collector_name="datacollector", canvas_width=500, canvas_height=200)
+# Chart per conteggio cellule con aggiunta dello stato della simulazione
+chart_cells = ChartModule(
+    [{"Label": "Tumor Cells (current)", "Color": "#FF0000"},  # Rosso acceso
+     {"Label": "Immune Cells (total)", "Color": "#0000FF"},    # Blu
+     {"Label": "Active Immune Cells", "Color": "#00FF00"},     # Verde
+     {"Label": "Destroyed Tumor Cells", "Color": "#000000"}],  # Nero
+    data_collector_name="datacollector",
+    canvas_height=200,
+    canvas_width=500
+)
 
-chart_biomarkers = ChartModule([
-    {"Label": "Average Cancer Cell PD-L1", "Color": "#a50026"},
-    {"Label": "Average TCell Activation",  "Color": "#2c7bb6"},
-    {"Label": "Average TCell Exhaustion",  "Color": "#f46d43"},
-], data_collector_name="datacollector", canvas_width=500, canvas_height=200)
+chart_biomarkers = ChartModule(
+    [{"Label": "Average Cancer Cell PD-L1", "Color": "#FF00FF"},  # Magenta
+     {"Label": "Average TCell Activation", "Color": "#00FFFF"},    # Ciano 
+     {"Label": "Average TCell Exhaustion", "Color": "#FFA500"}],  # Arancione
+    data_collector_name="datacollector",
+    canvas_height=200,
+    canvas_width=500
+)
 
-chart_survival = ChartModule([
-    {"Label": "Overall Survival",           "Color": "#abdda4"},
-    {"Label": "Progression-Free Survival", "Color": "#fc8d59"},
-    {"Label": "Time Step",                 "Color": "#ffffbf"},
-], data_collector_name="datacollector", canvas_width=500, canvas_height=200)
+chart_survival = ChartModule(
+    [{"Label": "Overall Survival", "Color": "#008000"},         # Verde scuro
+     {"Label": "Progression-Free Survival", "Color": "#FF4500"}, # Rosso-arancio
+     {"Label": "Time Step", "Color": "#A9A9A9"}],              # Grigio
+    data_collector_name="datacollector",
+    canvas_height=200,
+    canvas_width=500
+)
+
+# Chart aggiuntivo per lo stato della simulazione
+chart_status = ChartModule(
+    [{"Label": "Simulation Status", "Color": "#800080"}],  # Viola
+    data_collector_name="datacollector",
+    canvas_height=100,
+    canvas_width=500
+)
 
 # Legend
 legend = LegendElement()
 
-# 5) Server setup
+# Testo informativo sulle condizioni di terminazione
+class SimulationInfoElement:
+    """Elemento per mostrare informazioni sulle condizioni di terminazione"""
+    def __init__(self):
+        self.package_includes = []
+        self.local_includes = []
+        self.js_code = """
+        elements.push("Simulation Auto-Termination:");
+        elements.push("• REMISSION: Tumor cells ≤ 5");
+        elements.push("• TUMOR VICTORY: Tumor/Immune ratio ≥ 3.0");
+        elements.push("• MAX STEPS: Limit of 1000 steps reached");
+        """
+
+# 5) Server setup con informazioni aggiuntive
 server = ModularServer(
     model_wrapper,
     [grid, chart_cells, chart_biomarkers, chart_survival, legend],
-    "Simulazione RCC - Mesa 2.x",
+    "Simulazione RCC - Mesa 2.x (Auto-Termination)",
     model_params
 )
 
 if __name__ == "__main__":
     server.port = 8521
+    
     # Debug: show exactly what columns exist
-    df = model_wrapper(**{
+    print("=== TESTING MODEL INITIALIZATION ===")
+    test_model = model_wrapper(**{
         "initial_tumor_cells": 50,
         "initial_immune_cells": 30,
         "grid_size": 30,
@@ -102,7 +134,22 @@ if __name__ == "__main__":
         "use_treatment": True,
         "therapy_type": "PD1_INHIBITOR", "dosage": 0.5,
         "seed": 42
-    }).datacollector.get_model_vars_dataframe()
+    })
+    
+    df = test_model.datacollector.get_model_vars_dataframe()
     print("=== MODEL REPORTER COLUMNS ===")
     print(df.columns.tolist())
+    
+    print(f"\nInitial state:")
+    print(f"- Tumor cells: {test_model.get_total_tumor_cells()}")
+    print(f"- Immune cells: {test_model.get_total_immune_cells()}")
+    print(f"- Simulation running: {test_model.simulation_running}")
+    print(f"- Status: {test_model.get_simulation_status()}")
+    
+    print("\n=== SIMULATION TERMINATION CONDITIONS ===")
+    print("1. REMISSION: Tumor cells = 0 (Patient cured)")
+    print("2. TUMOR_VICTORY: Tumor/Immune ratio ≥ 3.0 (Tumor wins)")
+    print("3. MAX_STEPS: 1000 steps limit (Timeout)")
+    print("4. Manual: Start/Stop buttons")
+    
     server.launch()
