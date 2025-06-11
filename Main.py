@@ -1,9 +1,12 @@
+import io
+import base64
+import matplotlib.pyplot as plt
 from mesa import Model
 from mesa.time import RandomActivation
 from mesa.space import MultiGrid
 from mesa.datacollection import DataCollector
 from mesa.visualization.UserParam import Slider, NumberInput, Choice, Checkbox
-from mesa.visualization.modules import CanvasGrid, ChartModule
+from mesa.visualization.modules import CanvasGrid, TextElement
 from mesa.visualization.ModularVisualization import ModularServer
 from Simulation.RCCModel import RCCModel
 from LegendModule import LegendElement
@@ -27,7 +30,226 @@ def agent_portrayal(agent):
         portrayal.update({"Color": "lightblue", "r": 0.5, "Layer": 1})
     return portrayal
 
-# 2) Interactive model parameters
+# 2) Dashboard Element che sostituisce tutti i chart
+class ComprehensiveDashboard(TextElement):
+    """Dashboard completo che sostituisce i ChartModule problematici"""
+    
+    def render(self, model):
+        try:
+            # Statistiche base dal modello
+            tumor_cells = getattr(model, 'get_total_tumor_cells', lambda: 0)()
+            immune_cells = getattr(model, 'get_total_immune_cells', lambda: 0)()
+            status = getattr(model, 'get_simulation_status', lambda: "RUNNING")()
+            step = model.schedule.steps if hasattr(model, 'schedule') else 0
+            
+            # Calcola metriche
+            total_cells = tumor_cells + immune_cells
+            ratio = tumor_cells / max(immune_cells, 1) if immune_cells > 0 else float('inf')
+            
+            # Stato della simulazione
+            status_color = {
+                "RUNNING": "green",
+                "REMISSION": "blue", 
+                "TUMOR_VICTORY": "red",
+                "MAX_STEPS": "orange"
+            }.get(status, "gray")
+            
+            # HTML Dashboard
+            html = f"""
+            <div style="font-family: Arial, sans-serif; margin: 10px;">
+                
+                <!-- Header -->
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                           color: white; padding: 15px; border-radius: 10px; margin-bottom: 15px;">
+                    <h2 style="margin: 0; text-align: center;">🧬 RCC Simulation Dashboard</h2>
+                    <p style="margin: 5px 0 0 0; text-align: center;">Step {step} | Status: 
+                       <span style="color: {status_color}; font-weight: bold;">{status}</span>
+                    </p>
+                </div>
+                
+                <!-- Statistiche principali -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
+                           gap: 15px; margin-bottom: 20px;">
+                    
+                    <div style="background: #ffe6e6; border: 2px solid #ff6b6b; 
+                               border-radius: 8px; padding: 15px; text-align: center;">
+                        <h3 style="margin: 0; color: #c92a2a;">🔴 Tumor Cells</h3>
+                        <div style="font-size: 24px; font-weight: bold; color: #c92a2a;">{tumor_cells}</div>
+                    </div>
+                    
+                    <div style="background: #e6f3ff; border: 2px solid #4dabf7; 
+                               border-radius: 8px; padding: 15px; text-align: center;">
+                        <h3 style="margin: 0; color: #1971c2;">🔵 Immune Cells</h3>
+                        <div style="font-size: 24px; font-weight: bold; color: #1971c2;">{immune_cells}</div>
+                    </div>
+                    
+                    <div style="background: #f0f9f0; border: 2px solid #51cf66; 
+                               border-radius: 8px; padding: 15px; text-align: center;">
+                        <h3 style="margin: 0; color: #2f9e44;">📊 Total Cells</h3>
+                        <div style="font-size: 24px; font-weight: bold; color: #2f9e44;">{total_cells}</div>
+                    </div>
+                    
+                    <div style="background: #fff4e6; border: 2px solid #ff922b; 
+                               border-radius: 8px; padding: 15px; text-align: center;">
+                        <h3 style="margin: 0; color: #d9480f;">⚖️ T/I Ratio</h3>
+                        <div style="font-size: 24px; font-weight: bold; color: {'red' if ratio >= 3.0 else '#d9480f'};">
+                            {ratio:.2f}
+                        </div>
+                    </div>
+                </div>
+            """
+            
+            # Aggiungi dati dettagliati dal datacollector
+            if hasattr(model, 'datacollector'):
+                try:
+                    df = model.datacollector.get_model_vars_dataframe()
+                    print("DEBUG – DF columns:", df.columns)      # per il debug
+                    print("DEBUG – Last row:", df.tail(1))        # per il debug
+
+                    if not df.empty:
+                        latest = df.iloc[-1]
+
+                        html += """
+                        <div style="background: #f8f9fa; border: 1px solid #dee2e6;
+                                border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+                            <h3 style="margin-top: 0; color: #495057;">📈 Data Collector Values</h3>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px;">
+                        """
+
+                        # mostra tutte le variabili numeriche nella row più recente
+                        for col, val in latest.items():
+                            if isinstance(val, (int, float)):
+                                # scegli colori in base al nome della colonna
+                                name = col.lower()
+                                if 'tumor' in name or 'cancer' in name:
+                                    bg, text = "#ffebee", "#c62828"
+                                elif any(k in name for k in ['immune', 'tcell', 'nk']):
+                                    bg, text = "#e3f2fd", "#1565c0"
+                                elif any(k in name for k in ['pdl1', 'biomarker']):
+                                    bg, text = "#f3e5f5", "#7b1fa2"
+                                else:
+                                    bg, text = "#f5f5f5", "#424242"
+
+                                formatted = f"{val:.3f}" if isinstance(val, float) else str(val)
+                                html += f"""
+                                <div style="background: {bg}; padding: 8px; border-radius: 4px;
+                                        border-left: 3px solid {text};">
+                                    <strong style="color: {text};">{col}:</strong><br>
+                                    <span style="font-size: 14px; color: {text};">{formatted}</span>
+                                </div>
+                                """
+
+                        html += "</div></div>"
+
+                        if len(df) > 1:
+                            # 1) colonne generali (tumor/immune/cancer/tcell/pdl1), escluse le Average
+                            avg_prefixes = [
+                                "average cancer cell pd-l1",
+                                "average tcell activation",
+                                "average tcell exhaustion"
+                            ]
+                            all_key_cols = [c for c in df.columns
+                                            if any(k in c.lower() for k in
+                                                ['tumor', 'immune', 'cancer', 'tcell', 'pdl1'])]
+                            avg_cols = [c for c in all_key_cols
+                                        if any(c.lower().startswith(k) for k in avg_prefixes)]
+                            non_avg_cols = [c for c in all_key_cols if c not in avg_cols]
+
+                            # 2) colonne di sopravvivenza
+                            surv_cols = [
+                                c for c in df.columns
+                                if c.lower().strip() in ["overall survival", "progression-free survival"]
+                            ]
+
+                            # helper per disegnare line plot
+                            def make_line_plot(cols, title):
+                                fig, ax = plt.subplots()
+                                for col in cols:
+                                    ax.plot(df.index, df[col], label=col)
+                                ax.set_xlabel("Time Step")
+                                ax.set_ylabel("Value")
+                                ax.set_title(title)
+                                ax.legend(fontsize='small', loc='upper left')
+                                ax.grid(True)
+                                buf = io.BytesIO()
+                                plt.tight_layout()
+                                fig.savefig(buf, format='png')
+                                plt.close(fig)
+                                buf.seek(0)
+                                return base64.b64encode(buf.read()).decode('utf-8')
+
+                            # 1) Metrics over time (no averages)
+                            if non_avg_cols:
+                                img1 = make_line_plot(non_avg_cols, "")
+                                html += f"""
+                                <div style="background: #f8f9fa; border: 1px solid #dee2e6;
+                                            border-radius: 8px; padding: 15px; margin-bottom: 15px; text-align: center;">
+                                <h3 style="margin-top: 0; color: #495057;">📊 Metrics Over Time<br></h3>
+                                <img src="data:image/png;base64,{img1}"
+                                    style="max-width: 100%; height: auto; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);" />
+                                </div>
+                                """
+
+                            # 2) Averages over time
+                            if avg_cols:
+                                img2 = make_line_plot(avg_cols, "")
+                                html += f"""
+                                <div style="background: #f8f9fa; border: 1px solid #dee2e6;
+                                            border-radius: 8px; padding: 15px; margin-bottom: 15px; text-align: center;">
+                                <h3 style="margin-top: 0; color: #495057;">📊 Averages Over Time</h3>
+                                <img src="data:image/png;base64,{img2}"
+                                    style="max-width: 100%; height: auto; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);" />
+                                </div>
+                                """
+
+                            # 3) Survival metrics over time
+                            if surv_cols:
+                                img3 = make_line_plot(surv_cols, "")
+                                html += f"""
+                                <div style="background: #f8f9fa; border: 1px solid #dee2e6;
+                                            border-radius: 8px; padding: 15px; margin-bottom: 15px; text-align: center;">
+                                <h3 style="margin-top: 0; color: #495057;">📊 Survival Metrics Over Time</h3>
+                                <img src="data:image/png;base64,{img3}"
+                                    style="max-width: 100%; height: auto; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);" />
+                                </div>
+                                """
+
+
+                except Exception as e:
+                    html += f"""
+                    <div style="background: #fff3cd; border: 1px solid #ffeaa7;
+                            border-radius: 8px; padding: 15px; margin: 10px 0;">
+                        <strong>⚠️ DataCollector Warning:</strong> {e}
+                    </div>
+                    """
+
+            
+            # Condizioni di terminazione
+            html += """
+            <div style="background: #e9ecef; border: 1px solid #ced4da; 
+                       border-radius: 8px; padding: 15px; margin-top: 15px;">
+                <h3 style="margin-top: 0; color: #495057;">🎯 Termination Conditions</h3>
+                <ul style="margin: 0; padding-left: 20px;">
+                    <li><strong>REMISSION:</strong> Tumor cells ≤ 5 (Patient recovers)</li>
+                    <li><strong>TUMOR VICTORY:</strong> Tumor/Immune ratio ≥ 3.0 (Treatment fails)</li>
+                    <li><strong>MAX STEPS:</strong> Simulation reaches 1000 steps (Timeout)</li>
+                </ul>
+            </div>
+            
+            </div>
+            """
+            
+            return html
+            
+        except Exception as e:
+            return f"""
+            <div style="background: #f8d7da; border: 1px solid #f5c6cb; 
+                       border-radius: 8px; padding: 15px; color: #721c24;">
+                <strong>❌ Dashboard Error:</strong> {e}
+            </div>
+            """
+
+# 3) Interactive model parameters
 model_params = {
     "initial_tumor_cells": Slider("Initial Tumor Cells", 50, 0, 200, 1),
     "initial_immune_cells": Slider("Initial Immune Cells", 30, 0, 100, 1),
@@ -41,7 +263,7 @@ model_params = {
     "seed": NumberInput("Random Seed", 42)
 }
 
-# 3) Wrapper to map UI params to RCCModel
+# 4) Wrapper to map UI params to RCCModel
 def model_wrapper(**kwargs):
     patient_params = {"sex": kwargs.pop("sex"), "age": kwargs.pop("age"), "bmi": kwargs.pop("bmi")}  
     therapy_params = None
@@ -56,98 +278,30 @@ def model_wrapper(**kwargs):
         seed=kwargs.pop("seed")
     )
 
-# 4) Visualization modules
-# CanvasGrid: show agents
+# 5) Visualization modules
 grid = CanvasGrid(agent_portrayal, 30, 30, 500, 500)
-
-# Chart per conteggio cellule con aggiunta dello stato della simulazione
-chart_cells = ChartModule(
-    [{"Label": "Tumor Cells (current)", "Color": "#FF0000"},  # Rosso acceso
-     {"Label": "Immune Cells (total)", "Color": "#0000FF"},    # Blu
-     {"Label": "Active Immune Cells", "Color": "#00FF00"},     # Verde
-     {"Label": "Destroyed Tumor Cells", "Color": "#000000"}],  # Nero
-    data_collector_name="datacollector",
-    canvas_height=200,
-    canvas_width=500
-)
-
-chart_biomarkers = ChartModule(
-    [{"Label": "Average Cancer Cell PD-L1", "Color": "#FF00FF"},  # Magenta
-     {"Label": "Average TCell Activation", "Color": "#00FFFF"},    # Ciano 
-     {"Label": "Average TCell Exhaustion", "Color": "#FFA500"}],  # Arancione
-    data_collector_name="datacollector",
-    canvas_height=200,
-    canvas_width=500
-)
-
-chart_survival = ChartModule(
-    [{"Label": "Overall Survival", "Color": "#008000"},         # Verde scuro
-     {"Label": "Progression-Free Survival", "Color": "#FF4500"}, # Rosso-arancio
-     {"Label": "Time Step", "Color": "#A9A9A9"}],              # Grigio
-    data_collector_name="datacollector",
-    canvas_height=200,
-    canvas_width=500
-)
-
-# Chart aggiuntivo per lo stato della simulazione
-chart_status = ChartModule(
-    [{"Label": "Simulation Status", "Color": "#800080"}],  # Viola
-    data_collector_name="datacollector",
-    canvas_height=100,
-    canvas_width=500
-)
-
-# Legend
+dashboard = ComprehensiveDashboard()
 legend = LegendElement()
 
-# Testo informativo sulle condizioni di terminazione
-class SimulationInfoElement:
-    """Elemento per mostrare informazioni sulle condizioni di terminazione"""
-    def __init__(self):
-        self.package_includes = []
-        self.local_includes = []
-        self.js_code = """
-        elements.push("Simulation Auto-Termination:");
-        elements.push("• REMISSION: Tumor cells ≤ 5");
-        elements.push("• TUMOR VICTORY: Tumor/Immune ratio ≥ 3.0");
-        elements.push("• MAX STEPS: Limit of 1000 steps reached");
-        """
-
-# 5) Server setup con informazioni aggiuntive
+# 6) Server setup
 server = ModularServer(
     model_wrapper,
-    [grid, chart_cells, chart_biomarkers, chart_survival, legend],
-    "Simulazione RCC - Mesa 2.x (Auto-Termination)",
+    [grid, legend, dashboard],
+    "RCC Simulation - Mesa 2.x (Dashboard Version)",
     model_params
 )
 
 if __name__ == "__main__":
     server.port = 8521
     
-    # Debug: show exactly what columns exist
-    print("=== TESTING MODEL INITIALIZATION ===")
-    test_model = model_wrapper(**{
-        "initial_tumor_cells": 50,
-        "initial_immune_cells": 30,
-        "grid_size": 30,
-        "sex": "male", "age": 60, "bmi": 25.0,
-        "use_treatment": True,
-        "therapy_type": "PD1_INHIBITOR", "dosage": 0.5,
-        "seed": 42
-    })
-    
-    df = test_model.datacollector.get_model_vars_dataframe()
-    print("=== MODEL REPORTER COLUMNS ===")
-    print(df.columns.tolist())
-    
-    print(f"\nInitial state:")
-    print(f"- Tumor cells: {test_model.get_total_tumor_cells()}")
-    print(f"- Immune cells: {test_model.get_total_immune_cells()}")
-    print(f"- Simulation running: {test_model.simulation_running}")
-    print(f"- Status: {test_model.get_simulation_status()}")
+    print("=== RCC SIMULATION - NO CHARTMODULE VERSION ===")
+    print("Uses comprehensive HTML dashboard instead of problematic ChartModule")
+    print("Shows real-time statistics and trends")
+    print("Compatible with all Mesa versions")
+    print("No 'undefined' errors")
     
     print("\n=== SIMULATION TERMINATION CONDITIONS ===")
-    print("1. REMISSION: Tumor cells = 0 (Patient cured)")
+    print("1. REMISSION: Tumor cells ≤ 5 (Patient cured)")
     print("2. TUMOR_VICTORY: Tumor/Immune ratio ≥ 3.0 (Tumor wins)")
     print("3. MAX_STEPS: 1000 steps limit (Timeout)")
     print("4. Manual: Start/Stop buttons")

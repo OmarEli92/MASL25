@@ -1,3 +1,0 @@
-Tumor Cells (current),Immune Cells (total),Active Immune Cells,Destroyed Tumor Cells,Average Cancer Cell PD-L1,Average TCell Activation,Average TCell Exhaustion,Overall Survival,Progression-Free Survival,Time Step,Simulation Status
-158,12,7,0,0.5063291139240507,0.7459642336207517,0.824927203268701,0.0,100.0,0,RUNNING
-164,12,12,0,0.5109756097560976,0.7162238641794112,0.4289055591454685,0.0,0.0,1,TUMOR_VICTORY
