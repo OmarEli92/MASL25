@@ -74,7 +74,11 @@ class RCCModel(Model):
                 "Overall Survival": lambda m: m.get_overall_survival(),
                 "Progression-Free Survival": lambda m: m.get_progression_free_survival(),
                 "Time Step": lambda m: m.time_steps,
-                "Simulation Status": lambda m: m.get_simulation_status()
+                "Simulation Status": lambda m: m.get_simulation_status(),
+                "Patient Age": lambda m: m.patient.age,
+                "Patient Sex": lambda m: m.patient.sex,
+                "Patient BMI": lambda m: m.patient.bmi,
+                "Enable Treatment": lambda m: m.treatment is not None,
             },
             agent_reporters={
                 "Health": lambda a: getattr(a, 'health', None),
