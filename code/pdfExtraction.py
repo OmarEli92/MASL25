@@ -150,31 +150,47 @@ def create_comparison_charts():
     axes[0, 0].legend()
     axes[0, 0].grid(axis='y', alpha=0.3)
     
+    # Aggiungi valori esatti sopra le barre
+    for i, (sim_val, pdf_val) in enumerate(zip(sim_os_sex, pdf_os_sex)):
+        axes[0, 0].text(i - width/2, sim_val + 1, f'{sim_val:.1f}', ha='center', va='bottom')
+        axes[0, 0].text(i + width/2, pdf_val + 1, f'{pdf_val:.1f}', ha='center', va='bottom')
+    
     # ===== OS PER ETÀ =====
-    age_groups = ['Age<50', 'Age≥70']
+    age_groups = ['Age<50', 'Age50-69', 'Age≥70']  # Ora includiamo anche Age50-69
     sim_os_age = []
     pdf_os_age = []
     
     for age in age_groups:
         # Simulazione
-        if age == 'Age<50':
-            sim_subset = sim_df[sim_df['Age_Group'] == 'Age<50']
-        else:
-            sim_subset = sim_df[sim_df['Age_Group'] == 'Age≥70']
+        sim_subset = sim_df[sim_df['Age_Group'] == age]
         sim_os_age.append(sim_subset['OS_months'].median())
         
-        # PDF
-        pdf_val = pdf_df[pdf_df['Group'] == age]['Median_OS_months'].values
-        pdf_os_age.append(pdf_val[0] if len(pdf_val) > 0 else 0)
+        # PDF (solo per Age<50 e Age≥70)
+        if age == 'Age<50':
+            pdf_val = pdf_df[pdf_df['Group'] == 'Age<50']['Median_OS_months'].values[0]
+        elif age == 'Age≥70':
+            pdf_val = pdf_df[pdf_df['Group'] == 'Age≥70']['Median_OS_months'].values[0]
+        else:
+            pdf_val = np.nan  # Non presente nel PDF
+        pdf_os_age.append(pdf_val)
     
     x = np.arange(len(age_groups))
+    width = 0.35
     axes[0, 1].bar(x - width/2, sim_os_age, width, label='Simulazione', color='skyblue', alpha=0.8)
-    axes[0, 1].bar(x + width/2, pdf_os_age, width, label='PDF', color='lightcoral', alpha=0.8)
+    # Mostra solo le barre PDF per i gruppi presenti nel PDF
+    pdf_mask = ~np.isnan(pdf_os_age)
+    axes[0, 1].bar(x[pdf_mask] + width/2, np.array(pdf_os_age)[pdf_mask], width, label='PDF', color='lightcoral', alpha=0.8)
     axes[0, 1].set_ylabel('OS (mesi)')
     axes[0, 1].set_xticks(x)
     axes[0, 1].set_xticklabels(age_groups)
     axes[0, 1].legend()
     axes[0, 1].grid(axis='y', alpha=0.3)
+    
+    # Aggiungi valori esatti sopra le barre
+    for i, (sim_val, pdf_val) in enumerate(zip(sim_os_age, pdf_os_age)):
+        axes[0, 1].text(i - width/2, sim_val + 1, f'{sim_val:.1f}', ha='center', va='bottom')
+        if not np.isnan(pdf_val):
+            axes[0, 1].text(i + width/2, pdf_val + 1, f'{pdf_val:.1f}', ha='center', va='bottom')
     
     # ===== OS PER BMI =====
     bmi_groups = ['BMI<25', 'BMI≥25']
@@ -199,6 +215,11 @@ def create_comparison_charts():
     axes[0, 2].legend()
     axes[0, 2].grid(axis='y', alpha=0.3)
     
+    # Aggiungi valori esatti sopra le barre
+    for i, (sim_val, pdf_val) in enumerate(zip(sim_os_bmi, pdf_os_bmi)):
+        axes[0, 2].text(i - width/2, sim_val + 1, f'{sim_val:.1f}', ha='center', va='bottom')
+        axes[0, 2].text(i + width/2, pdf_val + 1, f'{pdf_val:.1f}', ha='center', va='bottom')
+    
     # ===== PFS PER SESSO =====
     sim_pfs_sex = []
     pdf_pfs_sex = []
@@ -221,16 +242,19 @@ def create_comparison_charts():
     axes[1, 0].legend()
     axes[1, 0].grid(axis='y', alpha=0.3)
     
+    # Aggiungi valori esatti sopra le barre
+    for i, (sim_val, pdf_val) in enumerate(zip(sim_pfs_sex, pdf_pfs_sex)):
+        axes[1, 0].text(i - width/2, sim_val + 0.5, f'{sim_val:.1f}', ha='center', va='bottom')
+        axes[1, 0].text(i + width/2, pdf_val + 0.5, f'{pdf_val:.1f}', ha='center', va='bottom')
+    
     # ===== PFS PER ETÀ =====
+    age_groups = ['Age<50', 'Age50-69', 'Age≥70']  # Ora includiamo anche Age50-69
     sim_pfs_age = []
     pdf_pfs_age = []
     
     for age in age_groups:
         # Simulazione
-        if age == 'Age<50':
-            sim_subset = sim_df[sim_df['Age_Group'] == 'Age<50']
-        else:
-            sim_subset = sim_df[sim_df['Age_Group'] == 'Age≥70']
+        sim_subset = sim_df[sim_df['Age_Group'] == age]
         sim_pfs_age.append(sim_subset['PFS_months'].median())
         
         # PDF (usa Overall come riferimento)
@@ -244,6 +268,11 @@ def create_comparison_charts():
     axes[1, 1].set_xticklabels(age_groups)
     axes[1, 1].legend()
     axes[1, 1].grid(axis='y', alpha=0.3)
+    
+    # Aggiungi valori esatti sopra le barre
+    for i, (sim_val, pdf_val) in enumerate(zip(sim_pfs_age, pdf_pfs_age)):
+        axes[1, 1].text(i - width/2, sim_val + 0.5, f'{sim_val:.1f}', ha='center', va='bottom')
+        axes[1, 1].text(i + width/2, pdf_val + 0.5, f'{pdf_val:.1f}', ha='center', va='bottom')
     
     # ===== PFS PER BMI =====
     sim_pfs_bmi = []
@@ -265,6 +294,11 @@ def create_comparison_charts():
     axes[1, 2].set_xticklabels(bmi_groups)
     axes[1, 2].legend()
     axes[1, 2].grid(axis='y', alpha=0.3)
+    
+    # Aggiungi valori esatti sopra le barre
+    for i, (sim_val, pdf_val) in enumerate(zip(sim_pfs_bmi, pdf_pfs_bmi)):
+        axes[1, 2].text(i - width/2, sim_val + 0.5, f'{sim_val:.1f}', ha='center', va='bottom')
+        axes[1, 2].text(i + width/2, pdf_val + 0.5, f'{pdf_val:.1f}', ha='center', va='bottom')
     
     plt.tight_layout()
     plt.show()
@@ -303,16 +337,19 @@ def calculate_differences():
         })
     
     # Per età
-    for age_group, age_label in [('Age<50', 'Age<50'), ('Age≥70', 'Age≥70')]:
-        if age_group == 'Age<50':
-            sim_subset = sim_df[sim_df['Age_Group'] == 'Age<50']
-        else:
-            sim_subset = sim_df[sim_df['Age_Group'] == 'Age≥70']
-        
+    for age_group in ['Age<50', 'Age50-69', 'Age≥70']:  # Ora includiamo anche Age50-69
+        sim_subset = sim_df[sim_df['Age_Group'] == age_group]
         sim_os = sim_subset['OS_months'].median()
         sim_pfs = sim_subset['PFS_months'].median()
         
-        pdf_os = pdf_df[pdf_df['Group'] == age_label]['Median_OS_months'].values[0]
+        # Solo per Age<50 e Age≥70 abbiamo dati PDF
+        if age_group == 'Age<50':
+            pdf_os = pdf_df[pdf_df['Group'] == 'Age<50']['Median_OS_months'].values[0]
+        elif age_group == 'Age≥70':
+            pdf_os = pdf_df[pdf_df['Group'] == 'Age≥70']['Median_OS_months'].values[0]
+        else:
+            pdf_os = np.nan  # Non presente nel PDF
+        
         pdf_pfs = 15.7
         
         differences.append({
@@ -320,7 +357,7 @@ def calculate_differences():
             'Group': age_group,
             'OS_Sim': sim_os,
             'OS_PDF': pdf_os,
-            'OS_Diff': sim_os - pdf_os,
+            'OS_Diff': sim_os - pdf_os if not np.isnan(pdf_os) else np.nan,
             'PFS_Sim': sim_pfs,
             'PFS_PDF': pdf_pfs,
             'PFS_Diff': sim_pfs - pdf_pfs
@@ -373,12 +410,8 @@ def train_models_by_groups():
             results.append(result)
     
     # Per età
-    for age_group in ['Age<50', 'Age≥70']:
-        if age_group == 'Age<50':
-            group_data = sim_df[sim_df['Age_Group'] == 'Age<50']
-        else:
-            group_data = sim_df[sim_df['Age_Group'] == 'Age≥70']
-        
+    for age_group in ['Age<50', 'Age50-69', 'Age≥70']:  # Ora includiamo anche Age50-69
+        group_data = sim_df[sim_df['Age_Group'] == age_group]
         if len(group_data) >= 20:
             result = train_model_for_group(group_data, features, f"Age_{age_group}")
             results.append(result)
@@ -431,4 +464,3 @@ def train_model_for_group(group_data, features, group_name):
 
 # Allena i modelli
 ml_results = train_models_by_groups()
-
