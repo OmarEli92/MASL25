@@ -1,13 +1,11 @@
-import pdfplumber
 import pandas as pd
-import os
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, r2_score
 import glob
-import seaborn as sns
+import os
 
 # Imposta encoding UTF-8 per l'output (soluzione per Windows)
 import sys
@@ -22,445 +20,349 @@ pdf_path = os.path.join(base_dir, "Santoni24_262_2024_Article_3719-new (4).pdf")
 # =============================================
 # 1. DATI DI RIFERIMENTO DAL PDF (hardcoded)
 # =============================================
+# =============================================
+# 1. DATI DI RIFERIMENTO DAL PDF (hardcoded)
+# =============================================
 pdf_data = {
-    "Group": ["Overall", "Male", "Female", "Age<50", "Age≥70", "BMI<25", "BMI≥25"],
-    "Median_OS_months": [38.7, 40.0, 38.7, 36.9, 31.4, 31.6, 44.2],
-    "OS_CI_lower": [32.7, 32.7, 26.4, 29.0, 26.4, 25.9, 35.8],
-    "OS_CI_upper": [44.2, 51.6, 41.0, 51.6, 49.2, 40.2, 55.7],
-    "Median_PFS_months": [15.7, 15.7, 15.7, None, None, None, None]
+    # Overall Survival
+    "OS": {
+        "Overall": {"median": 38.7, "CI_lower": 32.7, "CI_upper": 44.2},
+        "Male": {"median": 40.0, "CI_lower": 32.7, "CI_upper": 51.6},
+        "Female": {"median": 38.7, "CI_lower": 26.4, "CI_upper": 41.0},
+        "Age<50": {"median": 36.9, "CI_lower": 29.0, "CI_upper": 51.6},
+        "Age≥70": {"median": 31.4, "CI_lower": 26.4, "CI_upper": 49.2},
+        "BMI<25": {"median": 31.6, "CI_lower": 25.9, "CI_upper": 40.2},
+        "BMI≥25": {"median": 44.2, "CI_lower": 35.8, "CI_upper": 55.7}
+    },
+    # Progression-Free Survival
+    "PFS": {
+        "Overall": {"median": 15.7},
+        "Male": {"median": 15.7},
+        "Female": {"median": 15.7}
+    }
 }
 
-pdf_df = pd.DataFrame(pdf_data)
-print("Dati di riferimento dal PDF:")
-print(pdf_df)
+# =============================================
+# 2. CARICAMENTO E PREPROCESSING DEI DATI DI SIMULAZIONE
+# =============================================
+def load_simulation_data():
+    """Carica e unisce tutti i file CSV di simulazione"""
 
-# =============================================
-# 2. CARICAMENTO E PREPROCESSING DEI CSV
-# =============================================
-def load_and_preprocess(file_path):
-    df = pd.read_csv(file_path)
-    # Converti OS e PFS in mesi
-    df["OS_months"] = df["Overall Survival"] * 0.4  # 100% = 40 mesi
-    df["PFS_months"] = df["Progression-Free Survival"] * 0.157  # 100% = 15.7 mesi
+    data_dir = os.path.join(base_dir, "..", "data")  # vai su di una cartella poi nella cartella data
+    csv_pattern = os.path.join(data_dir, "final_*.csv")
+    csv_files = glob.glob(csv_pattern)
+    if not csv_files:
+        raise FileNotFoundError("Nessun file CSV trovato con pattern 'final*.csv'")
     
-    # Aggiungi colonne per i gruppi (come nel PDF)
-    df["Age_Group"] = pd.cut(
-        df["Patient Age"],
+    print(f"Trovati {len(csv_files)} file CSV:")
+    for f in csv_files:
+        print(f" - {os.path.basename(f)}")
+    
+    dfs = []
+    for f in csv_files:
+        try:
+            df = pd.read_csv(f)
+            dfs.append(df)
+        except Exception as e:
+            print(f"Errore nel caricamento del file {f}: {str(e)}")
+            continue
+    
+    if not dfs:
+        raise ValueError("Nessun dato caricato - tutti i file hanno avuto errori")
+    
+    sim_df = pd.concat(dfs, ignore_index=True)
+    
+    # Creazione gruppi
+    sim_df['Age_Group'] = pd.cut(
+        sim_df['patient_age'],
         bins=[0, 50, 70, 100],
         labels=["Age<50", "Age50-69", "Age≥70"]
     )
-    df["BMI_Group"] = pd.cut(
-        df["Patient BMI"],
+    
+    sim_df['BMI_Group'] = pd.cut(
+        sim_df['patient_bmi'],
         bins=[0, 25, 100],
         labels=["BMI<25", "BMI≥25"]
     )
-    return df
-
-# Carica tutti i CSV - con controllo di esistenza
-data_dir = os.path.join(base_dir, "..", "data")  # vai su di una cartella poi nella cartella data
-csv_pattern = os.path.join(data_dir, "simulation_*.csv")
-csv_files = glob.glob(csv_pattern)
-
-print(f"\nCercando CSV in: {data_dir}")
-print(f"Pattern di ricerca: {csv_pattern}")
-print(f"File CSV trovati: {csv_files}")
-
-if not csv_files:
-    print("ERRORE: Nessun file CSV trovato. Creando dati di esempio...")
-    np.random.seed(42)
-    n_samples = 1000
     
-    sim_df = pd.DataFrame({
-        'Patient Sex': np.random.choice(['Male', 'Female'], n_samples),
-        'Patient Age': np.random.normal(60, 15, n_samples),
-        'Patient BMI': np.random.normal(25, 5, n_samples),
-        'Overall Survival': np.random.normal(97, 10, n_samples),  # ~38.7 mesi
-        'Progression-Free Survival': np.random.normal(100, 15, n_samples),  # ~15.7 mesi
-        'Tumor Cells (current)': np.random.normal(50, 20, n_samples),
-        'Immune Cells (total)': np.random.normal(30, 10, n_samples),
-        'Active Immune Cells': np.random.normal(20, 8, n_samples)
-    })
-    
-    # Applica preprocessing
-    sim_df = load_and_preprocess_example(sim_df)
-else:
-    # Carica i CSV esistenti
-    sim_df = pd.concat([load_and_preprocess(f) for f in csv_files], ignore_index=True)
+    return sim_df
 
-def load_and_preprocess_example(df):
-    # Converti OS e PFS in mesi
-    df["OS_months"] = df["Overall Survival"] * 0.4  # 100% = 40 mesi
-    df["PFS_months"] = df["Progression-Free Survival"] * 0.157  # 100% = 15.7 mesi
-    
-    # Aggiungi colonne per i gruppi (come nel PDF)
-    df["Age_Group"] = pd.cut(
-        df["Patient Age"],
-        bins=[0, 50, 70, 100],
-        labels=["Age<50", "Age50-69", "Age≥70"]
-    )
-    df["BMI_Group"] = pd.cut(
-        df["Patient BMI"],
-        bins=[0, 25, 100],
-        labels=["BMI<25", "BMI≥25"]
-    )
-    return df
-
-print(f"\nDataset caricato: {len(sim_df)} righe")
-print(f"Colonne: {list(sim_df.columns)}")
+# Carica i dati di simulazione
+print("\nCaricamento dati simulazione...")
+sim_df = load_simulation_data()
 
 # =============================================
-# 3. FUNZIONE PER CREARE GRAFICI A BARRE COMPARATIVI
+# 3. PREPARAZIONE DATI PER ML E NORMALIZZAZIONE
 # =============================================
-def create_comparison_charts():
-    # Crea una figura con 2 sezioni principali: OS e PFS
+def prepare_data(sim_df):
+    """Prepara i dati per l'analisi e il ML"""
+    # Per i casi di remissione completa, usiamo i valori massimi
+    remission_mask = sim_df['outcome_category'] == 'COMPLETE_REMISSION'
+    
+    # Per gli altri casi, usiamo una combinazione di:
+    # 1. Valori osservati (se disponibili)
+    # 2. Stime basate su altre variabili
+    
+    # Calcola OS_months:
+    # - Per remissione: 40 mesi (valore massimo dal PDF)
+    # - Per altri casi: usiamo una trasformazione non lineare della percentuale
+    sim_df['OS_months'] = np.where(
+        remission_mask,
+        40.0,
+        np.where(
+            sim_df['overall_survival'] > 0,
+            40 * (1 - np.exp(-2 * sim_df['overall_survival'])),  # Trasformazione non lineare
+            # Se overall_survival è 0, stimiamo in base ad altre variabili
+            40 * (1 - np.exp(-0.1 * sim_df['destroyed_tumor_cells'] / 
+                            (sim_df['initial_tumor_cells'] + 1)))
+        )
+    )
+    
+    # Calcola PFS_months:
+    # - Per remissione: 15.7 mesi (valore massimo dal PDF)
+    # - Per altri casi: usiamo una trasformazione non lineare
+    sim_df['PFS_months'] = np.where(
+        remission_mask,
+        15.7,
+        np.where(
+            sim_df['progression_free_survival'] > 0,
+            15.7 * (1 - np.exp(-4 * sim_df['progression_free_survival'])),  # Trasformazione non lineare
+            # Se progression_free_survival è 0, stimiamo in base ad altre variabili
+            15.7 * (sim_df['final_active_immune_cells'] / 
+                   (sim_df['final_immune_cells'] + 1))
+        )
+    )
+    
+    # Features per il modello ML
+    features = [
+        'initial_tumor_cells', 'initial_immune_cells',
+        'final_tumor_cells', 'final_immune_cells', 'final_active_immune_cells',
+        'destroyed_tumor_cells', 'avg_pdl1_expression', 'avg_tcell_activation',
+        'avg_tcell_exhaustion', 'tumor_immune_ratio', 'tumor_reduction_percentage',
+        'patient_age', 'patient_bmi'
+    ]
+    
+    # Converti sesso in numerico
+    sim_df['sex_numeric'] = sim_df['patient_sex'].map({'male': 0, 'female': 1})
+    features.append('sex_numeric')
+    
+    return sim_df, features
+
+print("\nPreparazione dati...")
+sim_df, features = prepare_data(sim_df)
+
+# =============================================
+# 4. MODELLI DI MACHINE LEARNING PER MIGLIORARE LE STIME
+# =============================================
+def train_ml_models(sim_df, features):
+    """Addestra modelli ML per affinare le stime"""
+    # Prepariamo i dati
+    X = sim_df[features]
+    y_os = sim_df['OS_months']
+    y_pfs = sim_df['PFS_months']
+    
+    # Modello per OS
+    os_model = RandomForestRegressor(n_estimators=200, random_state=42, min_samples_leaf=5)
+    os_model.fit(X, y_os)
+    sim_df['OS_months_ML'] = os_model.predict(X)
+    
+    # Modello per PFS
+    pfs_model = RandomForestRegressor(n_estimators=200, random_state=42, min_samples_leaf=5)
+    pfs_model.fit(X, y_pfs)
+    sim_df['PFS_months_ML'] = pfs_model.predict(X)
+    
+    # Valutazione incrociata
+    X_train, X_test, y_os_train, y_os_test = train_test_split(X, y_os, test_size=0.2, random_state=42)
+    os_model.fit(X_train, y_os_train)
+    os_pred = os_model.predict(X_test)
+    os_mae = mean_absolute_error(y_os_test, os_pred)
+    os_r2 = r2_score(y_os_test, os_pred)
+    
+    _, _, y_pfs_train, y_pfs_test = train_test_split(X, y_pfs, test_size=0.2, random_state=42)
+    pfs_model.fit(X_train, y_pfs_train)
+    pfs_pred = pfs_model.predict(X_test)
+    pfs_mae = mean_absolute_error(y_pfs_test, pfs_pred)
+    pfs_r2 = r2_score(y_pfs_test, pfs_pred)
+    
+    print("\nPerformance dei modelli ML:")
+    print(f"OS - MAE: {os_mae:.2f} mesi, R2: {os_r2:.2f}")
+    print(f"PFS - MAE: {pfs_mae:.2f} mesi, R2: {pfs_r2:.2f}")
+    
+    return sim_df
+
+print("\nAddestramento modelli ML...")
+sim_df = train_ml_models(sim_df, features)
+
+# =============================================
+# 5. ANALISI PER CATEGORIE
+# =============================================
+def analyze_by_category(sim_df):
+    """Calcola le statistiche per ogni categoria"""
+    results = {}
+    
+    # Definizione delle categorie
+    categories = {
+        'Sex': {'male': sim_df[sim_df['patient_sex'] == 'male'],
+                'female': sim_df[sim_df['patient_sex'] == 'female']},
+        'Age': {'Age<50': sim_df[sim_df['Age_Group'] == 'Age<50'],
+                'Age50-69': sim_df[sim_df['Age_Group'] == 'Age50-69'],
+                'Age≥70': sim_df[sim_df['Age_Group'] == 'Age≥70']},
+        'BMI': {'BMI<25': sim_df[sim_df['BMI_Group'] == 'BMI<25'],
+                'BMI≥25': sim_df[sim_df['BMI_Group'] == 'BMI≥25']}
+    }
+    
+    for cat_name, groups in categories.items():
+        results[cat_name] = {}
+        for group_name, group_data in groups.items():
+            results[cat_name][group_name] = {
+                'OS_median': group_data['OS_months_ML'].median(),
+                'PFS_median': group_data['PFS_months_ML'].median(),
+                'count': len(group_data)
+            }
+    
+    return results
+
+# Analisi per categorie
+print("\nAnalisi per categorie...")
+category_results = analyze_by_category(sim_df)
+
+# =============================================
+# 6. GENERAZIONE GRAFICI COMPARATIVI
+# =============================================
+def generate_comparison_plots(pdf_data, category_results):
+    """Genera i grafici comparativi"""
     fig, axes = plt.subplots(2, 3, figsize=(18, 12))
     fig.suptitle('Confronto OS e PFS: Simulazione vs PDF', fontsize=16, fontweight='bold')
     
-    # ===== SEZIONE OS (riga superiore) =====
-    axes[0, 0].set_title('Overall Survival - Sesso', fontweight='bold')
-    axes[0, 1].set_title('Overall Survival - Età', fontweight='bold')
-    axes[0, 2].set_title('Overall Survival - BMI', fontweight='bold')
+    # Configurazione subplot
+    titles = [
+        ['Overall Survival - Sesso', 'Overall Survival - Età', 'Overall Survival - BMI'],
+        ['Progression-Free Survival - Sesso', 'Progression-Free Survival - Età', 'Progression-Free Survival - BMI']
+    ]
     
-    # ===== SEZIONE PFS (riga inferiore) =====
-    axes[1, 0].set_title('Progression-Free Survival - Sesso', fontweight='bold')
-    axes[1, 1].set_title('Progression-Free Survival - Età', fontweight='bold')
-    axes[1, 2].set_title('Progression-Free Survival - BMI', fontweight='bold')
+    for i in range(2):
+        for j in range(3):
+            axes[i,j].set_title(titles[i][j], fontweight='bold')
+            axes[i,j].grid(True, alpha=0.3)
+    
+    # Colori
+    sim_color = '#1f77b4'
+    pdf_color = '#ff7f0e'
+    width = 0.35
     
     # ===== OS PER SESSO =====
-    sex_groups = ['Male', 'Female']
-    sim_os_sex = []
-    pdf_os_sex = []
-    
-    for sex in sex_groups:
-        # Simulazione
-        sim_subset = sim_df[sim_df['Patient Sex'] == sex]
-        sim_os_sex.append(sim_subset['OS_months'].median())
-        
-        # PDF
-        pdf_val = pdf_df[pdf_df['Group'] == sex]['Median_OS_months'].values
-        pdf_os_sex.append(pdf_val[0] if len(pdf_val) > 0 else 0)
+    sex_groups = ['male', 'female']
+    sim_os = [category_results['Sex'][s]['OS_median'] for s in sex_groups]
+    pdf_os = [pdf_data['OS'][s.capitalize()]['median'] for s in sex_groups]
     
     x = np.arange(len(sex_groups))
-    width = 0.35
-    axes[0, 0].bar(x - width/2, sim_os_sex, width, label='Simulazione', color='skyblue', alpha=0.8)
-    axes[0, 0].bar(x + width/2, pdf_os_sex, width, label='PDF', color='lightcoral', alpha=0.8)
-    axes[0, 0].set_ylabel('OS (mesi)')
-    axes[0, 0].set_xticks(x)
-    axes[0, 0].set_xticklabels(sex_groups)
-    axes[0, 0].legend()
-    axes[0, 0].grid(axis='y', alpha=0.3)
+    axes[0,0].bar(x - width/2, sim_os, width, color=sim_color, alpha=0.7, label='Simulazione (ML)')
+    axes[0,0].bar(x + width/2, pdf_os, width, color=pdf_color, alpha=0.7, label='PDF')
+    axes[0,0].set_ylabel('OS (mesi)')
+    axes[0,0].set_xticks(x)
+    axes[0,0].set_xticklabels(['Male', 'Female'])
+    axes[0,0].legend()
     
-    # Aggiungi valori esatti sopra le barre
-    for i, (sim_val, pdf_val) in enumerate(zip(sim_os_sex, pdf_os_sex)):
-        axes[0, 0].text(i - width/2, sim_val + 1, f'{sim_val:.1f}', ha='center', va='bottom')
-        axes[0, 0].text(i + width/2, pdf_val + 1, f'{pdf_val:.1f}', ha='center', va='bottom')
+    # Aggiungi valori
+    for i, (sim_val, pdf_val) in enumerate(zip(sim_os, pdf_os)):
+        axes[0,0].text(i - width/2, sim_val + 1, f'{sim_val:.1f}', ha='center', color='black')
+        axes[0,0].text(i + width/2, pdf_val + 1, f'{pdf_val:.1f}', ha='center', color='black')
     
     # ===== OS PER ETÀ =====
-    age_groups = ['Age<50', 'Age50-69', 'Age≥70']  # Ora includiamo anche Age50-69
-    sim_os_age = []
-    pdf_os_age = []
-    
-    for age in age_groups:
-        # Simulazione
-        sim_subset = sim_df[sim_df['Age_Group'] == age]
-        sim_os_age.append(sim_subset['OS_months'].median())
-        
-        # PDF (solo per Age<50 e Age≥70)
-        if age == 'Age<50':
-            pdf_val = pdf_df[pdf_df['Group'] == 'Age<50']['Median_OS_months'].values[0]
-        elif age == 'Age≥70':
-            pdf_val = pdf_df[pdf_df['Group'] == 'Age≥70']['Median_OS_months'].values[0]
-        else:
-            pdf_val = np.nan  # Non presente nel PDF
-        pdf_os_age.append(pdf_val)
+    age_groups = ['Age<50', 'Age50-69', 'Age≥70']
+    sim_os_age = [category_results['Age'][a]['OS_median'] for a in age_groups]
+    pdf_os_age = [pdf_data['OS'].get(a, {}).get('median', 0) for a in age_groups]
     
     x = np.arange(len(age_groups))
-    width = 0.35
-    axes[0, 1].bar(x - width/2, sim_os_age, width, label='Simulazione', color='skyblue', alpha=0.8)
-    # Mostra solo le barre PDF per i gruppi presenti nel PDF
-    pdf_mask = ~np.isnan(pdf_os_age)
-    axes[0, 1].bar(x[pdf_mask] + width/2, np.array(pdf_os_age)[pdf_mask], width, label='PDF', color='lightcoral', alpha=0.8)
-    axes[0, 1].set_ylabel('OS (mesi)')
-    axes[0, 1].set_xticks(x)
-    axes[0, 1].set_xticklabels(age_groups)
-    axes[0, 1].legend()
-    axes[0, 1].grid(axis='y', alpha=0.3)
+    axes[0,1].bar(x - width/2, sim_os_age, width, color=sim_color, alpha=0.7, label='Simulazione (ML)')
+    axes[0,1].bar(x + width/2, pdf_os_age, width, color=pdf_color, alpha=0.7, label='PDF')
+    axes[0,1].set_ylabel('OS (mesi)')
+    axes[0,1].set_xticks(x)
+    axes[0,1].set_xticklabels(age_groups)
+    axes[0,1].legend()
     
-    # Aggiungi valori esatti sopra le barre
+    # Aggiungi valori
     for i, (sim_val, pdf_val) in enumerate(zip(sim_os_age, pdf_os_age)):
-        axes[0, 1].text(i - width/2, sim_val + 1, f'{sim_val:.1f}', ha='center', va='bottom')
-        if not np.isnan(pdf_val):
-            axes[0, 1].text(i + width/2, pdf_val + 1, f'{pdf_val:.1f}', ha='center', va='bottom')
+        if sim_val > 0:
+            axes[0,1].text(i - width/2, sim_val + 1, f'{sim_val:.1f}', ha='center', color='black')
+        if pdf_val > 0:
+            axes[0,1].text(i + width/2, pdf_val + 1, f'{pdf_val:.1f}', ha='center', color='black')
     
     # ===== OS PER BMI =====
     bmi_groups = ['BMI<25', 'BMI≥25']
-    sim_os_bmi = []
-    pdf_os_bmi = []
-    
-    for bmi in bmi_groups:
-        # Simulazione
-        sim_subset = sim_df[sim_df['BMI_Group'] == bmi]
-        sim_os_bmi.append(sim_subset['OS_months'].median())
-        
-        # PDF
-        pdf_val = pdf_df[pdf_df['Group'] == bmi]['Median_OS_months'].values
-        pdf_os_bmi.append(pdf_val[0] if len(pdf_val) > 0 else 0)
+    sim_os_bmi = [category_results['BMI'][b]['OS_median'] for b in bmi_groups]
+    pdf_os_bmi = [pdf_data['OS'][b]['median'] for b in bmi_groups]
     
     x = np.arange(len(bmi_groups))
-    axes[0, 2].bar(x - width/2, sim_os_bmi, width, label='Simulazione', color='skyblue', alpha=0.8)
-    axes[0, 2].bar(x + width/2, pdf_os_bmi, width, label='PDF', color='lightcoral', alpha=0.8)
-    axes[0, 2].set_ylabel('OS (mesi)')
-    axes[0, 2].set_xticks(x)
-    axes[0, 2].set_xticklabels(bmi_groups)
-    axes[0, 2].legend()
-    axes[0, 2].grid(axis='y', alpha=0.3)
+    axes[0,2].bar(x - width/2, sim_os_bmi, width, color=sim_color, alpha=0.7, label='Simulazione (ML)')
+    axes[0,2].bar(x + width/2, pdf_os_bmi, width, color=pdf_color, alpha=0.7, label='PDF')
+    axes[0,2].set_ylabel('OS (mesi)')
+    axes[0,2].set_xticks(x)
+    axes[0,2].set_xticklabels(bmi_groups)
+    axes[0,2].legend()
     
-    # Aggiungi valori esatti sopra le barre
+    # Aggiungi valori
     for i, (sim_val, pdf_val) in enumerate(zip(sim_os_bmi, pdf_os_bmi)):
-        axes[0, 2].text(i - width/2, sim_val + 1, f'{sim_val:.1f}', ha='center', va='bottom')
-        axes[0, 2].text(i + width/2, pdf_val + 1, f'{pdf_val:.1f}', ha='center', va='bottom')
+        axes[0,2].text(i - width/2, sim_val + 1, f'{sim_val:.1f}', ha='center', color='black')
+        axes[0,2].text(i + width/2, pdf_val + 1, f'{pdf_val:.1f}', ha='center', color='black')
     
     # ===== PFS PER SESSO =====
-    sim_pfs_sex = []
-    pdf_pfs_sex = []
-    
-    for sex in sex_groups:
-        # Simulazione
-        sim_subset = sim_df[sim_df['Patient Sex'] == sex]
-        sim_pfs_sex.append(sim_subset['PFS_months'].median())
-        
-        # PDF (solo Overall ha PFS nel PDF)
-        pdf_val = pdf_df[pdf_df['Group'] == 'Overall']['Median_PFS_months'].values
-        pdf_pfs_sex.append(pdf_val[0] if len(pdf_val) > 0 and pd.notna(pdf_val[0]) else 15.7)
+    sim_pfs_sex = [category_results['Sex'][s]['PFS_median'] for s in sex_groups]
+    pdf_pfs_sex = [pdf_data['PFS'].get(s.capitalize(), {}).get('median', 15.7) for s in sex_groups]
     
     x = np.arange(len(sex_groups))
-    axes[1, 0].bar(x - width/2, sim_pfs_sex, width, label='Simulazione', color='lightgreen', alpha=0.8)
-    axes[1, 0].bar(x + width/2, pdf_pfs_sex, width, label='PDF', color='orange', alpha=0.8)
-    axes[1, 0].set_ylabel('PFS (mesi)')
-    axes[1, 0].set_xticks(x)
-    axes[1, 0].set_xticklabels(sex_groups)
-    axes[1, 0].legend()
-    axes[1, 0].grid(axis='y', alpha=0.3)
+    axes[1,0].bar(x - width/2, sim_pfs_sex, width, color=sim_color, alpha=0.7, label='Simulazione (ML)')
+    axes[1,0].bar(x + width/2, pdf_pfs_sex, width, color=pdf_color, alpha=0.7, label='PDF')
+    axes[1,0].set_ylabel('PFS (mesi)')
+    axes[1,0].set_xticks(x)
+    axes[1,0].set_xticklabels(['Male', 'Female'])
+    axes[1,0].legend()
     
-    # Aggiungi valori esatti sopra le barre
+    # Aggiungi valori
     for i, (sim_val, pdf_val) in enumerate(zip(sim_pfs_sex, pdf_pfs_sex)):
-        axes[1, 0].text(i - width/2, sim_val + 0.5, f'{sim_val:.1f}', ha='center', va='bottom')
-        axes[1, 0].text(i + width/2, pdf_val + 0.5, f'{pdf_val:.1f}', ha='center', va='bottom')
+        axes[1,0].text(i - width/2, sim_val + 0.5, f'{sim_val:.1f}', ha='center', color='black')
+        axes[1,0].text(i + width/2, pdf_val + 0.5, f'{pdf_val:.1f}', ha='center', color='black')
     
     # ===== PFS PER ETÀ =====
-    age_groups = ['Age<50', 'Age50-69', 'Age≥70']  # Ora includiamo anche Age50-69
-    sim_pfs_age = []
-    pdf_pfs_age = []
-    
-    for age in age_groups:
-        # Simulazione
-        sim_subset = sim_df[sim_df['Age_Group'] == age]
-        sim_pfs_age.append(sim_subset['PFS_months'].median())
-        
-        # PDF (usa Overall come riferimento)
-        pdf_pfs_age.append(15.7)
+    sim_pfs_age = [category_results['Age'][a]['PFS_median'] for a in age_groups]
+    pdf_pfs_age = [15.7 for _ in age_groups]  # Default value
     
     x = np.arange(len(age_groups))
-    axes[1, 1].bar(x - width/2, sim_pfs_age, width, label='Simulazione', color='lightgreen', alpha=0.8)
-    axes[1, 1].bar(x + width/2, pdf_pfs_age, width, label='PDF', color='orange', alpha=0.8)
-    axes[1, 1].set_ylabel('PFS (mesi)')
-    axes[1, 1].set_xticks(x)
-    axes[1, 1].set_xticklabels(age_groups)
-    axes[1, 1].legend()
-    axes[1, 1].grid(axis='y', alpha=0.3)
+    axes[1,1].bar(x - width/2, sim_pfs_age, width, color=sim_color, alpha=0.7, label='Simulazione (ML)')
+    axes[1,1].bar(x + width/2, pdf_pfs_age, width, color=pdf_color, alpha=0.7, label='PDF')
+    axes[1,1].set_ylabel('PFS (mesi)')
+    axes[1,1].set_xticks(x)
+    axes[1,1].set_xticklabels(age_groups)
+    axes[1,1].legend()
     
-    # Aggiungi valori esatti sopra le barre
+    # Aggiungi valori
     for i, (sim_val, pdf_val) in enumerate(zip(sim_pfs_age, pdf_pfs_age)):
-        axes[1, 1].text(i - width/2, sim_val + 0.5, f'{sim_val:.1f}', ha='center', va='bottom')
-        axes[1, 1].text(i + width/2, pdf_val + 0.5, f'{pdf_val:.1f}', ha='center', va='bottom')
+        axes[1,1].text(i - width/2, sim_val + 0.5, f'{sim_val:.1f}', ha='center', color='black')
+        axes[1,1].text(i + width/2, pdf_val + 0.5, f'{pdf_val:.1f}', ha='center', color='black')
     
     # ===== PFS PER BMI =====
-    sim_pfs_bmi = []
-    pdf_pfs_bmi = []
-    
-    for bmi in bmi_groups:
-        # Simulazione
-        sim_subset = sim_df[sim_df['BMI_Group'] == bmi]
-        sim_pfs_bmi.append(sim_subset['PFS_months'].median())
-        
-        # PDF (usa Overall come riferimento)
-        pdf_pfs_bmi.append(15.7)
+    sim_pfs_bmi = [category_results['BMI'][b]['PFS_median'] for b in bmi_groups]
+    pdf_pfs_bmi = [15.7 for _ in bmi_groups]  # Default value
     
     x = np.arange(len(bmi_groups))
-    axes[1, 2].bar(x - width/2, sim_pfs_bmi, width, label='Simulazione', color='lightgreen', alpha=0.8)
-    axes[1, 2].bar(x + width/2, pdf_pfs_bmi, width, label='PDF', color='orange', alpha=0.8)
-    axes[1, 2].set_ylabel('PFS (mesi)')
-    axes[1, 2].set_xticks(x)
-    axes[1, 2].set_xticklabels(bmi_groups)
-    axes[1, 2].legend()
-    axes[1, 2].grid(axis='y', alpha=0.3)
+    axes[1,2].bar(x - width/2, sim_pfs_bmi, width, color=sim_color, alpha=0.7, label='Simulazione (ML)')
+    axes[1,2].bar(x + width/2, pdf_pfs_bmi, width, color=pdf_color, alpha=0.7, label='PDF')
+    axes[1,2].set_ylabel('PFS (mesi)')
+    axes[1,2].set_xticks(x)
+    axes[1,2].set_xticklabels(bmi_groups)
+    axes[1,2].legend()
     
-    # Aggiungi valori esatti sopra le barre
+    # Aggiungi valori
     for i, (sim_val, pdf_val) in enumerate(zip(sim_pfs_bmi, pdf_pfs_bmi)):
-        axes[1, 2].text(i - width/2, sim_val + 0.5, f'{sim_val:.1f}', ha='center', va='bottom')
-        axes[1, 2].text(i + width/2, pdf_val + 0.5, f'{pdf_val:.1f}', ha='center', va='bottom')
+        axes[1,2].text(i - width/2, sim_val + 0.5, f'{sim_val:.1f}', ha='center', color='black')
+        axes[1,2].text(i + width/2, pdf_val + 0.5, f'{pdf_val:.1f}', ha='center', color='black')
     
     plt.tight_layout()
+    plt.savefig('comparison_plot_final.png', dpi=300)
     plt.show()
 
-# Mostra i grafici
-create_comparison_charts()
+# Genera i grafici
+print("\nGenerazione grafici comparativi finali...")
+generate_comparison_plots(pdf_data, category_results)
 
-# =============================================
-# 4. CALCOLA LE DIFFERENZE TRA SIMULAZIONE E PDF
-# =============================================
-def calculate_differences():
-    print("\n" + "="*60)
-    print("ANALISI DELLE DIFFERENZE TRA SIMULAZIONE E PDF")
-    print("="*60)
-    
-    differences = []
-    
-    # Per sesso
-    for sex in ['Male', 'Female']:
-        sim_subset = sim_df[sim_df['Patient Sex'] == sex]
-        sim_os = sim_subset['OS_months'].median()
-        sim_pfs = sim_subset['PFS_months'].median()
-        
-        pdf_os = pdf_df[pdf_df['Group'] == sex]['Median_OS_months'].values[0]
-        pdf_pfs = 15.7  # Overall PFS dal PDF
-        
-        differences.append({
-            'Category': 'Sesso',
-            'Group': sex,
-            'OS_Sim': sim_os,
-            'OS_PDF': pdf_os,
-            'OS_Diff': sim_os - pdf_os,
-            'PFS_Sim': sim_pfs,
-            'PFS_PDF': pdf_pfs,
-            'PFS_Diff': sim_pfs - pdf_pfs
-        })
-    
-    # Per età
-    for age_group in ['Age<50', 'Age50-69', 'Age≥70']:  # Ora includiamo anche Age50-69
-        sim_subset = sim_df[sim_df['Age_Group'] == age_group]
-        sim_os = sim_subset['OS_months'].median()
-        sim_pfs = sim_subset['PFS_months'].median()
-        
-        # Solo per Age<50 e Age≥70 abbiamo dati PDF
-        if age_group == 'Age<50':
-            pdf_os = pdf_df[pdf_df['Group'] == 'Age<50']['Median_OS_months'].values[0]
-        elif age_group == 'Age≥70':
-            pdf_os = pdf_df[pdf_df['Group'] == 'Age≥70']['Median_OS_months'].values[0]
-        else:
-            pdf_os = np.nan  # Non presente nel PDF
-        
-        pdf_pfs = 15.7
-        
-        differences.append({
-            'Category': 'Età',
-            'Group': age_group,
-            'OS_Sim': sim_os,
-            'OS_PDF': pdf_os,
-            'OS_Diff': sim_os - pdf_os if not np.isnan(pdf_os) else np.nan,
-            'PFS_Sim': sim_pfs,
-            'PFS_PDF': pdf_pfs,
-            'PFS_Diff': sim_pfs - pdf_pfs
-        })
-    
-    # Per BMI
-    for bmi in ['BMI<25', 'BMI≥25']:
-        sim_subset = sim_df[sim_df['BMI_Group'] == bmi]
-        sim_os = sim_subset['OS_months'].median()
-        sim_pfs = sim_subset['PFS_months'].median()
-        
-        pdf_os = pdf_df[pdf_df['Group'] == bmi]['Median_OS_months'].values[0]
-        pdf_pfs = 15.7
-        
-        differences.append({
-            'Category': 'BMI',
-            'Group': bmi,
-            'OS_Sim': sim_os,
-            'OS_PDF': pdf_os,
-            'OS_Diff': sim_os - pdf_os,
-            'PFS_Sim': sim_pfs,
-            'PFS_PDF': pdf_pfs,
-            'PFS_Diff': sim_pfs - pdf_pfs
-        })
-    
-    diff_df = pd.DataFrame(differences)
-    print(diff_df.to_string(index=False))
-    
-    return diff_df
-
-# Calcola e mostra le differenze
-diff_results = calculate_differences()
-
-# =============================================
-# 5. MODELLO DI ML PER OGNI SOTTOGRUPPO
-# =============================================
-def train_models_by_groups():
-    print("\n" + "="*60)
-    print("TRAINING MODELLI ML PER SOTTOGRUPPI")
-    print("="*60)
-    
-    features = ["Tumor Cells (current)", "Immune Cells (total)", "Active Immune Cells"]
-    results = []
-    
-    # Per sesso
-    for sex in ['Male', 'Female']:
-        group_data = sim_df[sim_df['Patient Sex'] == sex]
-        if len(group_data) >= 20:
-            result = train_model_for_group(group_data, features, f"Sex_{sex}")
-            results.append(result)
-    
-    # Per età
-    for age_group in ['Age<50', 'Age50-69', 'Age≥70']:  # Ora includiamo anche Age50-69
-        group_data = sim_df[sim_df['Age_Group'] == age_group]
-        if len(group_data) >= 20:
-            result = train_model_for_group(group_data, features, f"Age_{age_group}")
-            results.append(result)
-    
-    # Per BMI
-    for bmi in ['BMI<25', 'BMI≥25']:
-        group_data = sim_df[sim_df['BMI_Group'] == bmi]
-        if len(group_data) >= 20:
-            result = train_model_for_group(group_data, features, f"BMI_{bmi}")
-            results.append(result)
-    
-    results_df = pd.DataFrame(results)
-    print(results_df.to_string(index=False))
-    
-    return results_df
-
-def train_model_for_group(group_data, features, group_name):
-    # Training per OS
-    X = group_data[features]
-    y_os = group_data["OS_months"]
-    y_pfs = group_data["PFS_months"]
-    
-    X_train, X_test, y_os_train, y_os_test = train_test_split(X, y_os, test_size=0.3, random_state=42)
-    _, _, y_pfs_train, y_pfs_test = train_test_split(X, y_pfs, test_size=0.3, random_state=42)
-    
-    # Modello OS
-    model_os = RandomForestRegressor(n_estimators=100, random_state=42)
-    model_os.fit(X_train, y_os_train)
-    y_os_pred = model_os.predict(X_test)
-    os_mae = mean_absolute_error(y_os_test, y_os_pred)
-    os_r2 = r2_score(y_os_test, y_os_pred)
-    
-    # Modello PFS
-    model_pfs = RandomForestRegressor(n_estimators=100, random_state=42)
-    model_pfs.fit(X_train, y_pfs_train)
-    y_pfs_pred = model_pfs.predict(X_test)
-    pfs_mae = mean_absolute_error(y_pfs_test, y_pfs_pred)
-    pfs_r2 = r2_score(y_pfs_test, y_pfs_pred)
-    
-    return {
-        "Group": group_name,
-        "N_samples": len(group_data),
-        "OS_MAE": round(os_mae, 2),
-        "OS_R2": round(os_r2, 3),
-        "PFS_MAE": round(pfs_mae, 2),
-        "PFS_R2": round(pfs_r2, 3),
-        "OS_median": round(group_data["OS_months"].median(), 1),
-        "PFS_median": round(group_data["PFS_months"].median(), 1)
-    }
-
-# Allena i modelli
-ml_results = train_models_by_groups()
+print("\nAnalisi completata con successo!")
