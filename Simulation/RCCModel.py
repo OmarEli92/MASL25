@@ -1,4 +1,4 @@
-from mesa import Model, Agent
+from mesa import Model
 from mesa.time import RandomActivation
 from mesa.space import MultiGrid
 from mesa.datacollection import DataCollector
@@ -83,8 +83,6 @@ class RCCModel(Model):
             }
         )
         self.datacollector.collect(self)
-        # Duplichiamo l'istanza per Mesa ChartModule legacy
-        self.DataCollector = self.datacollector
 
     def get_next_id(self):
         current_id = self.next_id
@@ -132,7 +130,7 @@ class RCCModel(Model):
             self.termination_reason = "REMISSION"
             # Ferma la simulazione anche nell'interfaccia Mesa
             self.running = False
-            print(f"🎉 Simulazione terminata al passo {self.time_steps}: PAZIENTE GUARITO! (cellule tumorali: {tumor_cells})")
+            print(f"Simulazione terminata al passo {self.time_steps}: PAZIENTE GUARITO! (cellule tumorali: {tumor_cells})")
             return
         
         # Condizione 2: Tumore ha vinto (troppe cellule tumorali rispetto a quelle immunitarie)
@@ -143,7 +141,7 @@ class RCCModel(Model):
                 self.termination_reason = "TUMOR_VICTORY"
                 # Ferma la simulazione anche nell'interfaccia Mesa
                 self.running = False
-                print(f"💀 Simulazione terminata al passo {self.time_steps}: TUMORE HA VINTO (rapporto {tumor_to_immune_ratio:.2f})")
+                print(f"Simulazione terminata al passo {self.time_steps}: TUMORE HA VINTO (rapporto {tumor_to_immune_ratio:.2f})")
                 return
         else:
             # Se non ci sono più cellule immunitarie, il tumore ha vinto
@@ -151,7 +149,7 @@ class RCCModel(Model):
             self.termination_reason = "TUMOR_VICTORY"
             # Ferma la simulazione anche nell'interfaccia Mesa
             self.running = False
-            print(f"💀 Simulazione terminata al passo {self.time_steps}: TUMORE HA VINTO (nessuna cellula immunitaria rimasta)")
+            print(f"Simulazione terminata al passo {self.time_steps}: TUMORE HA VINTO (nessuna cellula immunitaria rimasta)")
             return
         
         # Condizione 3: Limite massimo di step raggiunto
@@ -160,7 +158,7 @@ class RCCModel(Model):
             self.termination_reason = "MAX_STEPS"
             # Ferma la simulazione anche nell'interfaccia Mesa
             self.running = False
-            print(f"⏰ Simulazione terminata al passo {self.time_steps}: LIMITE MASSIMO RAGGIUNTO")
+            print(f"Simulazione terminata al passo {self.time_steps}: LIMITE MASSIMO RAGGIUNTO")
             return
 
     def get_simulation_status(self):

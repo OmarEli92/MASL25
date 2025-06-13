@@ -17,12 +17,10 @@ class NKCell(ImmuneCell):
         return random.random() < success_prob
     
     def step(self):
-        # Aggiungi la chiamata al metodo step della classe genitore
-        super().step()  # <--- QUESTA È LA CHIAVE PER IL MOVIMENTO
-        
+        super().step()        
         tumor_cells = [agent for agent in self.model.schedule.agents
                     if isinstance(agent, TumorCell) and not agent.isDead]
         if tumor_cells:
             target = random.choice(tumor_cells)
             if self.attack(target):
-                target.take_damage(35)  # Infliggi un danno significativo
+                target.take_damage(35)  

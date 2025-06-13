@@ -32,6 +32,6 @@ class THelper(ImmuneCell):
         self.secrete_cytokines()
         if self.is_active:
             other_immune_cells = [a for a in self.model.schedule.agents if isinstance(a, ImmuneCell) and a != self]
-            if other_immune_cells:  # Check if the list is not empty
+            if other_immune_cells:
                 cell_to_activate = random.choice(other_immune_cells)
                 cell_to_activate.activate()

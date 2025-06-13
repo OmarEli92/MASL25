@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 class TCell(ImmuneCell):
     def __init__(self, unique_id: int, model: "RCCModel", patient: Patient,
-                 subtype: TCellSubtype):  # Type-hint as RCCModel
+                 subtype: TCellSubtype):
         super().__init__(unique_id, model, patient)
         self.subtype = subtype
         self.target_priority = 0.8 if subtype == TCellSubtype.CD8 else 0.3

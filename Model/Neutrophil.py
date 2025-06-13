@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from Simulation.RCCModel import RCCModel
+
 class Neutrophil(ImmuneCell):
     def __init__(self,unique_id: int, model: "RCCModel", patient: Patient):
         super().__init__(unique_id, model, patient)

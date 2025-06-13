@@ -11,7 +11,7 @@ class Macrophage(ImmuneCell):
     def __init__(self, unique_id: int, model: "RCCModel", patient: Patient, phenotype: MacrophagePhenotype):
         super().__init__(unique_id, model, patient)
         self.phenotype = phenotype
-        self.cytokines = defaultdict(int)  # ✅ Fix per evitare KeyError
+        self.cytokines = defaultdict(int)
 
     def secrete_cytokines(self):
         if self.phenotype == MacrophagePhenotype.M1:

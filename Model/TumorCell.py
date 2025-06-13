@@ -1,7 +1,5 @@
 import random
-
 from mesa import Agent
-
 from Model.Patient import Patient
 from Model.Enumerazioni import TumorHistology
 from typing import TYPE_CHECKING
