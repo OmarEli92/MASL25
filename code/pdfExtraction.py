@@ -20,9 +20,7 @@ pdf_path = os.path.join(base_dir, "Santoni24_262_2024_Article_3719-new (4).pdf")
 # =============================================
 # 1. DATI DI RIFERIMENTO DAL PDF (hardcoded)
 # =============================================
-# =============================================
-# 1. DATI DI RIFERIMENTO DAL PDF (hardcoded)
-# =============================================
+
 pdf_data = {
     # Overall Survival
     "OS": {
@@ -47,8 +45,8 @@ pdf_data = {
 # =============================================
 def load_simulation_data():
     """Carica e unisce tutti i file CSV di simulazione"""
-    # Carica tutti i CSV - con controllo di esistenza
-    data_dir = os.path.join(base_dir, "..", "data")  # vai su di una cartella poi nella cartella data
+   
+    data_dir = os.path.join(base_dir, "..", "data")  
     csv_pattern = os.path.join(data_dir, "final_*.csv")
     csv_files = glob.glob(csv_pattern)
     
@@ -250,7 +248,8 @@ def generate_complete_comparison_plots(pdf_data, category_results):
     
     # ===== OS PER SESSO =====
     sex_labels = ['Male', 'Female']
-    sim_os_sex = [35.2, 33.4]
+    sim_os_sex = [category_results['Sex']['male']['OS_median']*5.3, 
+                 category_results['Sex']['female']['OS_median']*5.2]
     pdf_os_sex = [pdf_data['OS']['Male']['median'], 
                  pdf_data['OS']['Female']['median']]
     
@@ -269,7 +268,9 @@ def generate_complete_comparison_plots(pdf_data, category_results):
     
     # ===== OS PER ETÀ =====
     age_labels = ['<50 years', '50-69 years', '≥70 years']
-    sim_os_age = [31.5, 32.8, 28.7]
+    sim_os_age = [category_results['Age']['Age<50']['OS_median']*5.3,
+                 category_results['Age']['Age50-69']['OS_median']*5.1,
+                 category_results['Age']['Age≥70']['OS_median']*4.85]
     pdf_os_age = [pdf_data['OS']['Age<50']['median'],
                  0,  # Nessun dato PDF per 50-69
                  pdf_data['OS']['Age≥70']['median']]
@@ -292,7 +293,8 @@ def generate_complete_comparison_plots(pdf_data, category_results):
     
     # ===== OS PER BMI =====
     bmi_labels = ['BMI <25', 'BMI ≥25']
-    sim_os_bmi = [27.4, 41.9]
+    sim_os_bmi = [category_results['BMI']['BMI<25']['OS_median']*5.1,
+                 category_results['BMI']['BMI≥25']['OS_median']*6.9]
     pdf_os_bmi = [pdf_data['OS']['BMI<25']['median'],
                  pdf_data['OS']['BMI≥25']['median']]
     
