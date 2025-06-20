@@ -7,19 +7,19 @@ from sklearn.metrics import mean_absolute_error, r2_score
 import glob
 import os
 
-# Imposta encoding UTF-8 per l'output (soluzione per Windows)
+
 import sys
 if sys.platform == "win32":
     import io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-# Costruisci percorso relativo al file PDF
-base_dir = os.path.dirname(__file__)  # cartella dove si trova il file .py
+
+base_dir = os.path.dirname(__file__)  
 pdf_path = os.path.join(base_dir, "Santoni24_262_2024_Article_3719-new (4).pdf")
 
-# =============================================
-# 1. DATI DI RIFERIMENTO DAL PDF (hardcoded)
-# =============================================
+
+# 1. DATA FROM PDF 
+
 
 pdf_data = {
     # Overall Survival
@@ -40,18 +40,18 @@ pdf_data = {
     }
 }
 
-# =============================================
-# 2. CARICAMENTO E PREPROCESSING DEI DATI DI SIMULAZIONE
-# =============================================
+
+# 2. LOADING AND PREPROCESSING DATA FROM CSV
+
 def load_simulation_data():
-    """Carica e unisce tutti i file CSV di simulazione"""
+    
    
     data_dir = os.path.join(base_dir, "..", "data")  
     csv_pattern = os.path.join(data_dir, "final_*.csv")
     csv_files = glob.glob(csv_pattern)
     
     if not csv_files:
-        raise FileNotFoundError("Nessun file CSV trovato con pattern 'final*.csv'")
+        raise FileNotFoundError("Noone file found 'final*.csv'")
     
     
     
@@ -62,11 +62,11 @@ def load_simulation_data():
             df = pd.read_csv(f)
             dfs.append(df)
         except Exception as e:
-            print(f"Errore nel caricamento del file {f}: {str(e)}")
+            print(f"Error during file loading {f}: {str(e)}")
             continue
     
     if not dfs:
-        raise ValueError("Nessun dato caricato - tutti i file hanno avuto errori")
+        raise ValueError("Noone data loading")
     
     sim_df = pd.concat(dfs, ignore_index=True)
     
@@ -92,43 +92,43 @@ def load_simulation_data():
 
 sim_df = load_simulation_data()
 
-# =============================================
-# 3. CALCOLO OS E PFS IN MESI
-# =============================================
+
+# 3. CALCULATE OS E PFS IN MONTH
+
 def calculate_survival_months(sim_df):
     """Calcola OS e PFS in mesi con approccio ibrido"""
     remission_mask = sim_df['outcome_category'] == 'COMPLETE_REMISSION'
     
-    # Calcolo OS in mesi
+    #  OS in months
     sim_df['OS_months'] = np.where(
         remission_mask,
-        40.0,  # Valore massimo per remissione completa
+        40.0,  
         np.where(
             sim_df['overall_survival'] > 0,
-            # Trasformazione non lineare per valori positivi
+           
             40 * (1 - np.exp(-2 * sim_df['overall_survival'])),
-            # Stima basata su altre variabili per valori zero
+            
             np.clip(
                 5 + 35 * (sim_df['destroyed_tumor_cells'] / 
                          (sim_df['initial_tumor_cells'] + 1)),
-                1, 40  # Limiti realistici
+                1, 40  
             )
         )
     )
     
-    # Calcolo PFS in mesi
+    #  PFS in months
     sim_df['PFS_months'] = np.where(
         remission_mask,
-        15.7,  # Valore massimo per remissione completa
+        15.7,  
         np.where(
             sim_df['progression_free_survival'] > 0,
-            # Trasformazione non lineare per valori positivi
+           
             15.7 * (1 - np.exp(-4 * sim_df['progression_free_survival'])),
-            # Stima basata su altre variabili per valori zero
+            
             np.clip(
                 2 + 13.7 * (sim_df['final_active_immune_cells'] / 
                            (sim_df['final_immune_cells'] + 1)),
-                1, 15.7  # Limiti realistici
+                1, 15.7  
             )
         )
     )
@@ -138,11 +138,11 @@ def calculate_survival_months(sim_df):
 
 sim_df = calculate_survival_months(sim_df)
 
-# =============================================
-# 4. MODELLI ML PER AFFINARE LE STIME
-# =============================================
+
+# 4.  ML MODELS 
+
 def refine_with_ml(sim_df):
-    """Affina le stime con modelli ML"""
+   
     features = [
         'initial_tumor_cells', 'initial_immune_cells',
         'final_tumor_cells', 'final_immune_cells', 'final_active_immune_cells',
@@ -151,26 +151,26 @@ def refine_with_ml(sim_df):
         'patient_age', 'patient_bmi'
     ]
     
-    # Converti sesso in numerico
+
     sim_df['sex_numeric'] = sim_df['patient_sex'].map({'male': 0, 'female': 1})
     features.append('sex_numeric')
     
-    # Preparazione dati
+
     X = sim_df[features]
     y_os = sim_df['OS_months']
     y_pfs = sim_df['PFS_months']
     
-    # Modello OS
+    #  OS Model
     os_model = RandomForestRegressor(n_estimators=200, random_state=42, min_samples_leaf=3)
     os_model.fit(X, y_os)
     sim_df['OS_months_ML'] = os_model.predict(X)
     
-    # Modello PFS
+    #  PFS Model
     pfs_model = RandomForestRegressor(n_estimators=200, random_state=42, min_samples_leaf=3)
     pfs_model.fit(X, y_pfs)
     sim_df['PFS_months_ML'] = pfs_model.predict(X)
     
-    # Valutazione cross-validazione
+  
     X_train, X_test, y_os_train, y_os_test = train_test_split(X, y_os, test_size=0.2, random_state=42)
     os_model.fit(X_train, y_os_train)
     os_pred = os_model.predict(X_test)
@@ -187,9 +187,9 @@ def refine_with_ml(sim_df):
 
 sim_df = refine_with_ml(sim_df)
 
-# =============================================
-# 5. ANALISI PER CATEGORIE
-# =============================================
+
+# 5. ANALIZE category
+
 def analyze_by_category(sim_df):
     """Calcola le statistiche per ogni categoria"""
     results = {}
@@ -218,35 +218,35 @@ def analyze_by_category(sim_df):
 
 category_results = analyze_by_category(sim_df)
 
-# =============================================
-# 6. GENERAZIONE GRAFICI COMPARATIVI COMPLETI
-# =============================================
+
+# 6. GENERATION OF COMPLETE COMPARATIVE GRAPHICS
+
 def generate_complete_comparison_plots(pdf_data, category_results):
     
     fig, axes = plt.subplots(2, 3, figsize=(20, 14))
     fig.suptitle('Full Comparison: Simulation vs Clinical Data', fontsize=18, fontweight='bold')
 
-    # CORREZIONE: Aumenta il valore di top per evitare sovrapposizione
-    plt.subplots_adjust(top=0.92, hspace=0.3, wspace=0.3)  # top=0.92 invece di 0.4
+   
+    plt.subplots_adjust(top=0.92, hspace=0.3, wspace=0.3) 
     
-    # Configurazione subplot
+ 
     titles = [
-        ['Overall Survival - Sesso', 'Overall Survival - Age', 'Overall Survival - BMI'],
-        ['Progression-Free Survival - Sesso', 'Progression-Free Survival - Age', 'Progression-Free Survival - BMI']
+        ['Overall Survival - Sex', 'Overall Survival - Age', 'Overall Survival - BMI'],
+        ['Progression-Free Survival - Sex', 'Progression-Free Survival - Age', 'Progression-Free Survival - BMI']
     ]
     
     for i in range(2):
         for j in range(3):
             axes[i,j].set_title(titles[i][j], fontsize=14, fontweight='bold')
             axes[i,j].grid(True, alpha=0.3)
-            axes[i,j].set_ylim(0, 60 if i == 0 else 20)  # Scale diverse per OS e PFS
+            axes[i,j].set_ylim(0, 60 if i == 0 else 20)  
     
-    # Colori e stili
+
     sim_color = '#1f77b4'
     pdf_color = '#ff7f0e'
     width = 0.35
     
-    # ===== OS PER SESSO =====
+    # ===== OS PER SEX =====
     sex_labels = ['Male', 'Female']
     sim_os_sex = [category_results['Sex']['male']['OS_median']*5.3, 
                  category_results['Sex']['female']['OS_median']*5.2]
@@ -261,37 +261,37 @@ def generate_complete_comparison_plots(pdf_data, category_results):
     axes[0,0].set_xticklabels(sex_labels, fontsize=12)
     axes[0,0].legend(fontsize=12)
     
-    # Aggiungi valori
+
     for i, (sim_val, pdf_val) in enumerate(zip(sim_os_sex, pdf_os_sex)):
         axes[0,0].text(i - width/2, sim_val + 2, f'{sim_val:.1f}', ha='center', fontsize=11, fontweight='bold')
         axes[0,0].text(i + width/2, pdf_val + 2, f'{pdf_val:.1f}', ha='center', fontsize=11, fontweight='bold')
     
-    # ===== OS PER ETÀ =====
+    # ===== OS FOR AGE =====
     age_labels = ['<50 years', '50-69 years', '≥70 years']
     sim_os_age = [category_results['Age']['Age<50']['OS_median']*5.3,
                  category_results['Age']['Age50-69']['OS_median']*5.1,
                  category_results['Age']['Age≥70']['OS_median']*4.85]
     pdf_os_age = [pdf_data['OS']['Age<50']['median'],
-                 0,  # Nessun dato PDF per 50-69
+                 0,  
                  pdf_data['OS']['Age≥70']['median']]
     
     x = np.arange(len(age_labels))
     axes[0,1].bar(x - width/2, sim_os_age, width, color=sim_color, alpha=0.7, label='Simulation')
     pdf_bars = axes[0,1].bar(x + width/2, pdf_os_age, width, color=pdf_color, alpha=0.7, label='Clinical Data')
-    # Nascondi barra senza dati
+
     pdf_bars[1].set_visible(False)
     axes[0,1].set_ylabel('Months', fontsize=12)
     axes[0,1].set_xticks(x)
     axes[0,1].set_xticklabels(age_labels, fontsize=12)
     axes[0,1].legend(fontsize=12)
     
-    # Aggiungi valori
+
     for i, (sim_val, pdf_val) in enumerate(zip(sim_os_age, pdf_os_age)):
         axes[0,1].text(i - width/2, sim_val + 2, f'{sim_val:.1f}', ha='center', fontsize=11, fontweight='bold')
-        if i != 1:  # Salta il dato mancante
+        if i != 1:  
             axes[0,1].text(i + width/2, pdf_val + 2, f'{pdf_val:.1f}', ha='center', fontsize=11, fontweight='bold')
     
-    # ===== OS PER BMI =====
+    # ===== OS FOR BMI =====
     bmi_labels = ['BMI <25', 'BMI ≥25']
     sim_os_bmi = [category_results['BMI']['BMI<25']['OS_median']*5.1,
                  category_results['BMI']['BMI≥25']['OS_median']*6.9]
@@ -306,12 +306,12 @@ def generate_complete_comparison_plots(pdf_data, category_results):
     axes[0,2].set_xticklabels(bmi_labels, fontsize=12)
     axes[0,2].legend(fontsize=12)
     
-    # Aggiungi valori
+
     for i, (sim_val, pdf_val) in enumerate(zip(sim_os_bmi, pdf_os_bmi)):
         axes[0,2].text(i - width/2, sim_val + 2, f'{sim_val:.1f}', ha='center', fontsize=11, fontweight='bold')
         axes[0,2].text(i + width/2, pdf_val + 2, f'{pdf_val:.1f}', ha='center', fontsize=11, fontweight='bold')
     
-    # ===== PFS PER SESSO =====
+    # ===== PFS FOR SEX =====
     sim_pfs_sex = [category_results['Sex']['male']['PFS_median'],
                  category_results['Sex']['female']['PFS_median']]
     pdf_pfs_sex = [pdf_data['PFS']['Male']['median'],
@@ -325,16 +325,16 @@ def generate_complete_comparison_plots(pdf_data, category_results):
     axes[1,0].set_xticklabels(sex_labels, fontsize=12)
     axes[1,0].legend(fontsize=12)
     
-    # Aggiungi valori
+   
     for i, (sim_val, pdf_val) in enumerate(zip(sim_pfs_sex, pdf_pfs_sex)):
         axes[1,0].text(i - width/2, sim_val + 0.7, f'{sim_val:.1f}', ha='center', fontsize=11, fontweight='bold')
         axes[1,0].text(i + width/2, pdf_val + 0.7, f'{pdf_val:.1f}', ha='center', fontsize=11, fontweight='bold')
     
-    # ===== PFS PER ETÀ =====
+    # ===== PFS FOR SEX =====
     sim_pfs_age = [category_results['Age']['Age<50']['PFS_median'],
                  category_results['Age']['Age50-69']['PFS_median'],
                  category_results['Age']['Age≥70']['PFS_median']]
-    pdf_pfs_age = [15.7, 15.7, 15.7]  # Valore medio per tutti i gruppi
+    pdf_pfs_age = [15.7, 15.7, 15.7] 
     
     x = np.arange(len(age_labels))
     axes[1,1].bar(x - width/2, sim_pfs_age, width, color=sim_color, alpha=0.7, label='Simulation')
@@ -344,15 +344,15 @@ def generate_complete_comparison_plots(pdf_data, category_results):
     axes[1,1].set_xticklabels(age_labels, fontsize=12)
     axes[1,1].legend(fontsize=12)
     
-    # Aggiungi valori
+  
     for i, (sim_val, pdf_val) in enumerate(zip(sim_pfs_age, pdf_pfs_age)):
         axes[1,1].text(i - width/2, sim_val + 0.7, f'{sim_val:.1f}', ha='center', fontsize=11, fontweight='bold')
         axes[1,1].text(i + width/2, pdf_val + 0.7, f'{pdf_val:.1f}', ha='center', fontsize=11, fontweight='bold')
     
-    # ===== PFS PER BMI =====
+    # ===== PFS FOR BMI =====
     sim_pfs_bmi = [category_results['BMI']['BMI<25']['PFS_median'],
                  category_results['BMI']['BMI≥25']['PFS_median']]
-    pdf_pfs_bmi = [15.7, 15.7]  # Valore medio per tutti i gruppi
+    pdf_pfs_bmi = [15.7, 15.7]  
     
     x = np.arange(len(bmi_labels))
     axes[1,2].bar(x - width/2, sim_pfs_bmi, width, color=sim_color, alpha=0.7, label='Simulation')
@@ -362,14 +362,14 @@ def generate_complete_comparison_plots(pdf_data, category_results):
     axes[1,2].set_xticklabels(bmi_labels, fontsize=12)
     axes[1,2].legend(fontsize=12)
     
-    # Aggiungi valori
+
     for i, (sim_val, pdf_val) in enumerate(zip(sim_pfs_bmi, pdf_pfs_bmi)):
         axes[1,2].text(i - width/2, sim_val + 0.7, f'{sim_val:.1f}', ha='center', fontsize=11, fontweight='bold')
         axes[1,2].text(i + width/2, pdf_val + 0.7, f'{pdf_val:.1f}', ha='center', fontsize=11, fontweight='bold')
     
-    # CORREZIONE: Usa tight_layout() PRIMA di subplots_adjust() per evitare conflitti
+    
     plt.tight_layout()
-    plt.subplots_adjust(top=0.92)  # Applica di nuovo dopo tight_layout
+    plt.subplots_adjust(top=0.92)  
     
     plt.savefig('comparison_plot_complete.png', dpi=300, bbox_inches='tight')
     plt.show()
