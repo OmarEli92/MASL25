@@ -39,7 +39,7 @@ class ComprehensiveDashboard(TextElement):
             status_color = {
                 "RUNNING": "green",
                 "REMISSION": "blue", 
-                "TUMOR_VICTORY": "red",
+                "PATIENT DEAD": "red",
                 "MAX_STEPS": "orange"
             }.get(status, "gray")
             
@@ -133,7 +133,13 @@ class ComprehensiveDashboard(TextElement):
                                                 ['tumor', 'immune', 'cancer', 'tcell', 'pdl1'])]
                             avg_cols = [c for c in all_key_cols
                                         if any(c.lower().startswith(k) for k in avg_prefixes)]
-                            non_avg_cols = [c for c in all_key_cols if c not in avg_cols]
+                            
+                            
+                            non_avg_cols = [c for c in all_key_cols 
+                                    if c not in avg_cols 
+                                    and 'immune cells' not in c.lower()  
+                                    or 'active immune cells' in c.lower()]  
+
 
                             surv_cols = [
                                 c for c in df.columns
@@ -141,17 +147,34 @@ class ComprehensiveDashboard(TextElement):
                             ]
 
                             def make_line_plot(cols, title):
-                                fig, ax = plt.subplots()
-                                for col in cols:
-                                    ax.plot(df.index, df[col], label=col)
-                                ax.set_xlabel("Time Step")
-                                ax.set_ylabel("Value")
-                                ax.set_title(title)
-                                ax.legend(fontsize='small', loc='upper left')
-                                ax.grid(True)
+                                fig, ax = plt.subplots(figsize=(10, 6))
+                                
+                                # Usa colori diversi per ogni linea
+                                colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
+                                         '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+                                
+                                for i, col in enumerate(cols):
+                                    color = colors[i % len(colors)]
+                                    ax.plot(df.index, df[col], label=col, color=color, linewidth=2, marker='o', markersize=4)
+                                
+                                ax.set_xlabel("Time Step", fontsize=12)
+                                ax.set_ylabel("Value", fontsize=12)
+                                ax.set_title(title, fontsize=14, fontweight='bold')
+                                
+                                # Posiziona la leggenda sopra il grafico
+                                ax.legend(bbox_to_anchor=(0.5, -0.1), loc='upper center', 
+                                         ncol=min(3, len(cols)), fontsize='small', 
+                                         frameon=True, fancybox=True, shadow=True)
+                                
+                                ax.grid(True, alpha=0.3)
+                                ax.set_facecolor('#fafafa')
+                                
+                                # Aggiungi margine per la leggenda
+                                plt.subplots_adjust(bottom=0.2)
+                                
                                 buf = io.BytesIO()
                                 plt.tight_layout()
-                                fig.savefig(buf, format='png')
+                                fig.savefig(buf, format='png', dpi=100, bbox_inches='tight')
                                 plt.close(fig)
                                 buf.seek(0)
                                 return base64.b64encode(buf.read()).decode('utf-8')
@@ -161,7 +184,7 @@ class ComprehensiveDashboard(TextElement):
                                 html += f"""
                                 <div style="background: #f8f9fa; border: 1px solid #dee2e6;
                                             border-radius: 8px; padding: 15px; margin-bottom: 15px; text-align: center;">
-                                <h3 style="margin-top: 0; color: #495057;">Cells Metrics Over Time<br></h3>
+                                <h3 style="margin-top: 0; color: #495057;">Cells Metrics Over Time</h3>
                                 <img src="data:image/png;base64,{img1}"
                                     style="max-width: 100%; height: auto; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);" />
                                 </div>
